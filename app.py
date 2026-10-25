@@ -96,15 +96,15 @@ elif st.session_state.klar_til_indsendelse:
 # 2. Registrering af faser
 st.subheader("2. Registrer faser på ruten")
 
-def gem_stempel(handling, ekstra_info=""):
+def gem_stempel(handling, ekstra_info="-"):
     nu = datetime.now()
     st.session_state.malinger.append({
         'Dato': nu.strftime('%Y-%m-%d'),
-        'Tidspunkt': nu.strftime('%H:%M'),
-        'Initialer': initialer,
-        'Pluktype': endelig_pluktype,
-        'Handling': handling,
-        'Ekstra_Info': ekstra_info
+        'Tidspunkt': nu.strftime('%H:%M:%S'),
+        'Initialer': initialer if initialer else "-",
+        'Pluktype': endelig_pluktype if endelig_pluktype else "-",
+        'Handling': handling if handling else "-",
+        'Ekstra_Info': ekstra_info if ekstra_info else "-"
     })
 
 if not st.session_state.rute_aktiv:
@@ -219,28 +219,17 @@ if st.session_state.malinger:
                 
                 with st.spinner("Sender registreringer til Google Form... Vent venligst..."):
                     headers = {
-                        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Content-Type': 'application/x-www-form-urlencoded'
                     }
                     for row in st.session_state.malinger:
-                        d_str = str(row.get('Dato', ''))
-                        t_str = str(row.get('Tidspunkt', ''))
-                        
                         payload = {
-                            # Standard string format
-                            'entry.1109742049': d_str,
-                            'entry.1387317177': str(row.get('Initialer', '')),
-                            'entry.1597480740': str(row.get('Pluktype', '')),
-                            'entry.2111546458': str(row.get('Handling', '')),
-                            'entry.785756491': t_str,
-                            'entry.1581018160': str(row.get('Ekstra_Info', '')),
-                            
-                            # Google Form Date/Time split format support
-                            'entry.1109742049_year': d_str.split('-')[0] if '-' in d_str else '',
-                            'entry.1109742049_month': d_str.split('-')[1] if '-' in d_str else '',
-                            'entry.1109742049_day': d_str.split('-')[2] if '-' in d_str else '',
-                            
-                            'entry.785756491_hour': t_str.split(':')[0] if ':' in t_str else '',
-                            'entry.785756491_minute': t_str.split(':')[1] if ':' in t_str else ''
+                            'entry.1109742049': str(row.get('Dato') or '-'),
+                            'entry.785756491': str(row.get('Tidspunkt') or '-'),
+                            'entry.1387317177': str(row.get('Initialer') or '-'),
+                            'entry.1597480740': str(row.get('Pluktype') or '-'),
+                            'entry.2111546458': str(row.get('Handling') or '-'),
+                            'entry.1581018160': str(row.get('Ekstra_Info') or '-')
                         }
                         try:
                             res = requests.post(FORM_RESPONSE_URL, data=payload, headers=headers, timeout=10)
