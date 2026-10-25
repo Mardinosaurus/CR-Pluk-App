@@ -5,18 +5,37 @@ import requests
 
 st.set_page_config(page_title="Carl Ras - TDABC Plukmåling", layout="centered")
 
-# Skjul Streamlit standardikoner, menu, profil, header og footer
+# Skjul ALT Streamlit-relateret UI (header, footer, viewer badge, profil, deploy knap osv.)
 hide_st_style = """
     <style>
-    #MainMenu {visibility: hidden; display: none !important;}
-    header {visibility: hidden; display: none !important;}
-    footer {visibility: hidden; display: none !important;}
+    #MainMenu {visibility: hidden !important; display: none !important;}
+    header {visibility: hidden !important; display: none !important;}
+    footer {visibility: hidden !important; display: none !important;}
     .stAppDeployButton {display: none !important;}
     [data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
     [data-testid="stHeader"] {visibility: hidden !important; display: none !important;}
     [data-testid="stDecoration"] {visibility: hidden !important; display: none !important;}
     [data-testid="stStatusWidget"] {visibility: hidden !important; display: none !important;}
     .stAppHeader {display: none !important;}
+    
+    /* Skjul Streamlit Cloud "Hosted with Streamlit" badge og profilikon i bunden */
+    .viewerBadge_container__1tB2o,
+    .viewerBadge_link__1S137,
+    [class*="viewerBadge"],
+    [class*="styles_viewerBadge"],
+    a[href*="streamlit.app"],
+    a[href*="streamlit.io"] {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+    }
+    
+    /* Gør knapper og layout endnu mere rent */
+    div.block-container {
+        padding-top: 1.5rem !important;
+        padding-bottom: 2rem !important;
+    }
     </style>
 """
 st.markdown(hide_st_style, unsafe_allow_html=True)
@@ -81,7 +100,7 @@ def gem_stempel(handling, ekstra_info=""):
     nu = datetime.now()
     st.session_state.malinger.append({
         'Dato': nu.strftime('%Y-%m-%d'),
-        'Tidspunkt': nu.strftime('%H:%M:%S'),
+        'Tidspunkt': nu.strftime('%H:%M'),
         'Initialer': initialer,
         'Pluktype': endelig_pluktype,
         'Handling': handling,
@@ -136,7 +155,9 @@ else:
     col_f1, col_f2 = st.columns(2)
 
     with col_f1:
-        if st.button("Afsat til Sørensen", use_container_width=True):
+        # Når "Afsat til Sørensen" er valgt/trykket på, lyser den rød (primary)
+        sor_type = "primary" if st.session_state.valgt_sorensen else "secondary"
+        if st.button("Afsat til Sørensen", type=sor_type, use_container_width=True):
             gem_stempel("Afsat til Sørensen")
             st.session_state.valgt_sorensen = True
             st.rerun()
@@ -202,12 +223,12 @@ if st.session_state.malinger:
                     }
                     for row in st.session_state.malinger:
                         payload = {
-                            'entry.1109742049': row.get('Dato', ''),
-                            'entry.785756491': row.get('Tidspunkt', ''),
-                            'entry.1387317177': row.get('Initialer', ''),
-                            'entry.1597480740': row.get('Pluktype', ''),
-                            'entry.2111546458': row.get('Handling', ''),
-                            'entry.1581018160': row.get('Ekstra_Info', '')
+                            'entry.1109742049': str(row.get('Dato', '')),
+                            'entry.785756491': str(row.get('Tidspunkt', '')),
+                            'entry.1387317177': str(row.get('Initialer', '')),
+                            'entry.1597480740': str(row.get('Pluktype', '')),
+                            'entry.2111546458': str(row.get('Handling', '')),
+                            'entry.1581018160': str(row.get('Ekstra_Info', ''))
                         }
                         try:
                             res = requests.post(FORM_RESPONSE_URL, data=payload, headers=headers, timeout=10)
