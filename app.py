@@ -104,7 +104,7 @@ else:
         if st.button(f"Afslut pluk {trin}", use_container_width=True):
             gem_stempel(f"Afslut pluk {trin}")
             st.session_state.transport_trykket = False
-            if st.session_state.pluk_trin &lt; 10:
+            if st.session_state.pluk_trin < 10:
                 st.session_state.pluk_trin += 1
             st.rerun()
 
