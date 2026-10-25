@@ -189,32 +189,46 @@ if st.session_state.malinger:
                 FORM_RESPONSE_URL = "https://docs.google.com/forms/d/e/1FAIpQLSdAu8l9zMvnPmeDrQnJCj3Y2jvjJp--pjUPcP5A8aCUxu0CSA/formResponse"
                 
                 fejl_antal = 0
-                for row in st.session_state.malinger:
-                    try:
-                        data_payload = urllib.parse.urlencode({
-                            'entry.1109742049': row.get('Dato', ''),
-                            'entry.785756491': row.get('Tidspunkt', ''),
-                            'entry.1387317177': row.get('Initialer', ''),
-                            'entry.1597480740': row.get('Pluktype', ''),
-                            'entry.2111546458': row.get('Handling', ''),
-                            'entry.1581018160': row.get('Ekstra_Info', '')
-                        }).encode('utf-8')
-                        
-                        req = urllib.request.Request(FORM_RESPONSE_URL, data=data_payload)
-                        urllib.request.urlopen(req)
-                    except Exception as e:
-                        fejl_antal += 1
+                succes_antal = 0
+                
+                with st.spinner("Sender registreringer til Google Form... Vent venligst..."):
+                    headers = {
+                        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                    }
+                    for row in st.session_state.malinger:
+                        try:
+                            data_payload = urllib.parse.urlencode({
+                                'entry.1109742049': row.get('Dato', ''),
+                                'entry.785756491': row.get('Tidspunkt', ''),
+                                'entry.1387317177': row.get('Initialer', ''),
+                                'entry.1597480740': row.get('Pluktype', ''),
+                                'entry.2111546458': row.get('Handling', ''),
+                                'entry.1581018160': row.get('Ekstra_Info', '')
+                            }).encode('utf-8')
+                            
+                            req = urllib.request.Request(FORM_RESPONSE_URL, data=data_payload, headers=headers)
+                            with urllib.request.urlopen(req) as response:
+                                if response.status in (200, 302):
+                                    succes_antal += 1
+                                else:
+                                    fejl_antal += 1
+                        except Exception as e:
+                            fejl_antal += 1
 
-                st.session_state.malinger = []
-                st.session_state.rute_aktiv = False
-                st.session_state.klar_til_indsendelse = False
-                st.session_state.valgt_sorensen = False
-                st.session_state.pluk_trin = 1
-                st.session_state.transport_trykket = False
-                st.session_state.emballage_trykket = False
-                st.session_state.bekraeft_send = False
-                st.success("Målingen er nu indsendt og gemt i dit Google Sheet!")
-                st.rerun()
+                if fejl_antal == 0:
+                    st.session_state.malinger = []
+                    st.session_state.rute_aktiv = False
+                    st.session_state.klar_til_indsendelse = False
+                    st.session_state.valgt_sorensen = False
+                    st.session_state.pluk_trin = 1
+                    st.session_state.transport_trykket = False
+                    st.session_state.emballage_trykket = False
+                    st.session_state.bekraeft_send = False
+                    st.success("Målingen er nu indsendt og gemt i dit Google Sheet!")
+                    st.rerun()
+                else:
+                    st.error(f"Der opstod fejl ved indsendelse af {fejl_antal} linjer. Prøv igen.")
+                    st.session_state.bekraeft_send = False
         with c_nej:
             if st.button("Nej", use_container_width=True):
                 st.session_state.bekraeft_send = False
