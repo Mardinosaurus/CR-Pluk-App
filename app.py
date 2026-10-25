@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -6,6 +5,17 @@ import urllib.request
 import urllib.parse
 
 st.set_page_config(page_title="Carl Ras - TDABC Plukmåling", layout="centered")
+
+# Skjul Streamlit standardikoner, menu og footer
+hide_st_style = """
+    <style>
+    #MainMenu {visibility: hidden;}
+    header {visibility: hidden;}
+    footer {visibility: hidden;}
+    .stAppDeployButton {display:none;}
+    </style>
+"""
+st.markdown(hide_st_style, unsafe_allow_html=True)
 
 st.title("Carl Ras - Plukmåling (TDABC)")
 st.caption("Registrer tidsstempler for plukruter på lageret.")
@@ -17,27 +27,28 @@ if 'pluk_trin' not in st.session_state:
     st.session_state.pluk_trin = 1
 if 'rute_aktiv' not in st.session_state:
     st.session_state.rute_aktiv = False
+if 'klar_til_indsendelse' not in st.session_state:
+    st.session_state.klar_til_indsendelse = False
 if 'valgt_sorensen' not in st.session_state:
     st.session_state.valgt_sorensen = False
 if 'bekraeft_send' not in st.session_state:
     st.session_state.bekraeft_send = False
 if 'transport_trykket' not in st.session_state:
     st.session_state.transport_trykket = False
+if 'emballage_trykket' not in st.session_state:
+    st.session_state.emballage_trykket = False
 
 # 1. Stamdata
 st.subheader("1. Før du starter ruten")
-col1, col2 = st.columns(2)
 
-with col1:
-    initialer = st.text_input("Dine initialer *", value=st.session_state.get('saved_initialer', ''), placeholder="f.eks. MHA").strip()
-    if initialer:
-        st.session_state.saved_initialer = initialer
+initialer = st.text_input("Dine initialer *", value=st.session_state.get('saved_initialer', ''), placeholder="f.eks. MHA").strip()
+if initialer:
+    st.session_state.saved_initialer = initialer
 
-with col2:
-    hoved_pluktype = st.selectbox(
-        "Vælg pluktype *",
-        ["Kassepluk", "Pallepluk", "Længde pluk", "Buffer pluk"]
-    )
+hoved_pluktype = st.selectbox(
+    "Vælg pluktype *",
+    ["Kassepluk", "Pallepluk", "Længde pluk", "Buffer pluk"]
+)
 
 palle_underType = ""
 antal_kassepluk = 1
@@ -52,10 +63,12 @@ else:
     endelig_pluktype = hoved_pluktype
 
 st.divider()
-kan_starte = len(initialer) > 0
+kan_starte = len(initialer) > 0 and not st.session_state.klar_til_indsendelse
 
-if not kan_starte:
+if not len(initialer) > 0:
     st.warning("Indtast dine initialer ovenfor for at starte ruten.")
+elif st.session_state.klar_til_indsendelse:
+    st.info("Ruten er afsluttet! Rul ned til '3. Indsend data' for at gemme målingen.")
 
 # 2. Registrering af faser
 st.subheader("2. Registrer faser på ruten")
@@ -74,8 +87,10 @@ def gem_stempel(handling, ekstra_info=""):
 if not st.session_state.rute_aktiv:
     if st.button("Start plukrute", disabled=not kan_starte, type="primary", use_container_width=True):
         st.session_state.rute_aktiv = True
+        st.session_state.klar_til_indsendelse = False
         st.session_state.pluk_trin = 1
         st.session_state.transport_trykket = False
+        st.session_state.emballage_trykket = False
         st.session_state.valgt_sorensen = False
         st.session_state.bekraeft_send = False
         gem_stempel("Start plukrute")
@@ -83,8 +98,11 @@ if not st.session_state.rute_aktiv:
 else:
     st.info(f"Aktiv rute: {initialer} | {endelig_pluktype}")
 
-    if st.button("Afslut emballage pålægning", use_container_width=True):
+    emb_type = "primary" if st.session_state.emballage_trykket else "secondary"
+    if st.button("Afslut emballage pålægning", type=emb_type, use_container_width=True):
+        st.session_state.emballage_trykket = True
         gem_stempel("Afslut emballage pålægning")
+        st.rerun()
 
     st.divider()
 
@@ -123,6 +141,7 @@ else:
         if st.button("Afslut pluk", use_container_width=True):
             gem_stempel("Afslut pluk")
             st.session_state.rute_aktiv = False
+            st.session_state.klar_til_indsendelse = True
             st.rerun()
 
     if st.session_state.valgt_sorensen:
@@ -151,34 +170,12 @@ else:
             gem_stempel("Tillægstjenester v. Sørensen", ekstra_info=info_str)
             st.session_state.valgt_sorensen = False
             st.session_state.rute_aktiv = False
+            st.session_state.klar_til_indsendelse = True
             st.rerun()
 
 st.divider()
 
 if st.session_state.malinger:
-    df_aktiv = pd.DataFrame(st.session_state.malinger)
-    
-    # Skjult expander til tabel og rettelsesknapper
-    with st.expander("Vis registreringer (Ret / Nulstil)"):
-        st.dataframe(df_aktiv, use_container_width=True)
-        col_a, col_b = st.columns(2)
-        with col_a:
-            if st.button("Angre seneste tryk", use_container_width=True):
-                st.session_state.malinger.pop()
-                if st.session_state.pluk_trin > 1:
-                    st.session_state.pluk_trin -= 1
-                st.session_state.transport_trykket = False
-                st.rerun()
-        with col_b:
-            if st.button("Nulstil rute", use_container_width=True):
-                st.session_state.malinger = []
-                st.session_state.rute_aktiv = False
-                st.session_state.valgt_sorensen = False
-                st.session_state.pluk_trin = 1
-                st.session_state.transport_trykket = False
-                st.session_state.bekraeft_send = False
-                st.rerun()
-
     st.subheader("3. Indsend data")
     if not st.session_state.bekraeft_send:
         if st.button("Send data", type="primary", use_container_width=True):
@@ -210,9 +207,11 @@ if st.session_state.malinger:
 
                 st.session_state.malinger = []
                 st.session_state.rute_aktiv = False
+                st.session_state.klar_til_indsendelse = False
                 st.session_state.valgt_sorensen = False
                 st.session_state.pluk_trin = 1
                 st.session_state.transport_trykket = False
+                st.session_state.emballage_trykket = False
                 st.session_state.bekraeft_send = False
                 st.success("Målingen er nu indsendt og gemt i dit Google Sheet!")
                 st.rerun()
