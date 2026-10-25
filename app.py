@@ -1,18 +1,22 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import urllib.request
-import urllib.parse
+import requests
 
 st.set_page_config(page_title="Carl Ras - TDABC Plukmåling", layout="centered")
 
-# Skjul Streamlit standardikoner, menu og footer
+# Skjul Streamlit standardikoner, menu, profil, header og footer
 hide_st_style = """
     <style>
-    #MainMenu {visibility: hidden;}
-    header {visibility: hidden;}
-    footer {visibility: hidden;}
-    .stAppDeployButton {display:none;}
+    #MainMenu {visibility: hidden; display: none !important;}
+    header {visibility: hidden; display: none !important;}
+    footer {visibility: hidden; display: none !important;}
+    .stAppDeployButton {display: none !important;}
+    [data-testid="stToolbar"] {visibility: hidden !important; display: none !important;}
+    [data-testid="stHeader"] {visibility: hidden !important; display: none !important;}
+    [data-testid="stDecoration"] {visibility: hidden !important; display: none !important;}
+    [data-testid="stStatusWidget"] {visibility: hidden !important; display: none !important;}
+    .stAppHeader {display: none !important;}
     </style>
 """
 st.markdown(hide_st_style, unsafe_allow_html=True)
@@ -190,30 +194,31 @@ if st.session_state.malinger:
                 
                 fejl_antal = 0
                 succes_antal = 0
+                sidste_fejl = ""
                 
                 with st.spinner("Sender registreringer til Google Form... Vent venligst..."):
                     headers = {
                         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                     }
                     for row in st.session_state.malinger:
+                        payload = {
+                            'entry.1109742049': row.get('Dato', ''),
+                            'entry.785756491': row.get('Tidspunkt', ''),
+                            'entry.1387317177': row.get('Initialer', ''),
+                            'entry.1597480740': row.get('Pluktype', ''),
+                            'entry.2111546458': row.get('Handling', ''),
+                            'entry.1581018160': row.get('Ekstra_Info', '')
+                        }
                         try:
-                            data_payload = urllib.parse.urlencode({
-                                'entry.1109742049': row.get('Dato', ''),
-                                'entry.785756491': row.get('Tidspunkt', ''),
-                                'entry.1387317177': row.get('Initialer', ''),
-                                'entry.1597480740': row.get('Pluktype', ''),
-                                'entry.2111546458': row.get('Handling', ''),
-                                'entry.1581018160': row.get('Ekstra_Info', '')
-                            }).encode('utf-8')
-                            
-                            req = urllib.request.Request(FORM_RESPONSE_URL, data=data_payload, headers=headers)
-                            with urllib.request.urlopen(req) as response:
-                                if response.status in (200, 302):
-                                    succes_antal += 1
-                                else:
-                                    fejl_antal += 1
+                            res = requests.post(FORM_RESPONSE_URL, data=payload, headers=headers, timeout=10)
+                            if res.status_code in (200, 302):
+                                succes_antal += 1
+                            else:
+                                fejl_antal += 1
+                                sidste_fejl = f"HTTP status {res.status_code}"
                         except Exception as e:
                             fejl_antal += 1
+                            sidste_fejl = str(e)
 
                 if fejl_antal == 0:
                     st.session_state.malinger = []
@@ -227,7 +232,7 @@ if st.session_state.malinger:
                     st.success("Målingen er nu indsendt og gemt i dit Google Sheet!")
                     st.rerun()
                 else:
-                    st.error(f"Der opstod fejl ved indsendelse af {fejl_antal} linjer. Prøv igen.")
+                    st.error(f"Der opstod fejl ved indsendelse af {fejl_antal} linjer. Årsag: {sidste_fejl}")
                     st.session_state.bekraeft_send = False
         with c_nej:
             if st.button("Nej", use_container_width=True):
