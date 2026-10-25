@@ -1,33 +1,29 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-
-# Feilsikker import af GSheetsConnection
-try:
-    from streamlit_gsheets import GSheetsConnection
-    HAS_GSHEETS = True
-except ImportError:
-    HAS_GSHEETS = False
+import urllib.request
+import urllib.parse
 
 st.set_page_config(page_title="Carl Ras - TDABC Plukmåling", layout="centered")
+
 st.title("Carl Ras - Plukmåling (TDABC)")
 st.caption("Registrer tidsstempler for plukruter på lageret.")
 
+# Session state initialization
 if 'malinger' not in st.session_state:
     st.session_state.malinger = []
-
 if 'pluk_trin' not in st.session_state:
     st.session_state.pluk_trin = 1
-
 if 'rute_aktiv' not in st.session_state:
     st.session_state.rute_aktiv = False
-
 if 'valgt_sorensen' not in st.session_state:
     st.session_state.valgt_sorensen = False
-
 if 'bekraeft_send' not in st.session_state:
     st.session_state.bekraeft_send = False
+if 'transport_trykket' not in st.session_state:
+    st.session_state.transport_trykket = False
 
+# 1. Stamdata
 st.subheader("1. Før du starter ruten")
 col1, col2 = st.columns(2)
 
@@ -60,24 +56,25 @@ kan_starte = len(initialer) > 0
 if not kan_starte:
     st.warning("Indtast dine initialer ovenfor for at starte ruten.")
 
+# 2. Registrering af faser
 st.subheader("2. Registrer faser på ruten")
 
 def gem_stempel(handling, ekstra_info=""):
     nu = datetime.now()
     st.session_state.malinger.append({
-        'Dato': nu.strftime('%d-%m-%Y'),
+        'Dato': nu.strftime('%Y-%m-%d'),
         'Tidspunkt': nu.strftime('%H:%M:%S'),
         'Initialer': initialer,
         'Pluktype': endelig_pluktype,
         'Handling': handling,
         'Ekstra_Info': ekstra_info
     })
-    st.success(f"Registreret: {handling} kl. {nu.strftime('%H:%M:%S')}")
 
 if not st.session_state.rute_aktiv:
-    if st.button("Start plukrute", disabled=not kan_starte, use_container_width=True):
+    if st.button("Start plukrute", disabled=not kan_starte, type="primary", use_container_width=True):
         st.session_state.rute_aktiv = True
         st.session_state.pluk_trin = 1
+        st.session_state.transport_trykket = False
         st.session_state.valgt_sorensen = False
         st.session_state.bekraeft_send = False
         gem_stempel("Start plukrute")
@@ -85,21 +82,27 @@ if not st.session_state.rute_aktiv:
 else:
     st.info(f"Aktiv rute: {initialer} | {endelig_pluktype}")
 
-    if st.button("Afslut emballage pålegning", use_container_width=True):
+    if st.button("Harteringen", use_container_width=True):
         gem_stempel("Afslut emballage pålegning")
 
     st.divider()
 
+    # Kompakt plukplads modul (1 til 10)
     trin = st.session_state.pluk_trin
-    st.write(f"**Aktuel plukplads: Nr. {trin} (af maks 10)**")
+    st.write(f"**Aktuel plukpluds: Nr. {trin} (af maks 10)**")
     
     col_t1, col_t2 = st.columns(2)
     with col_t1:
-        if st.button(f"Transport til pluk {trin}", use_container_width=True):
-            gem_stempel(f"Transport til plukplads {trin}")
+        trans_type = "primary" if st.session_state.transport_trykket else "secondary"
+        if st.button(f"Transport til pluk {trin}", type=trans_type, use_container_width=True):
+            st.session_state.transport_trykket = True
+            gem_stempel(f"Transport til plwplads {trin}")
+            st.rerun()
+
     with col_t2:
         if st.button(f"Afslut pluk {trin}", use_container_width=True):
             gem_stempel(f"Afslut pluk {trin}")
+            st.session_state.transport_trykket = False
             if st.session_state.pluk_trin < 10:
                 st.session_state.pluk_trin += 1
             st.rerun()
@@ -123,10 +126,10 @@ else:
 
     if st.session_state.valgt_sorensen:
         st.divider()
-        st.write("**Viderereing Kravs: Sørensen (Forsendelse)**")
+        st.write("** Viderelevering Krav: Sørensen (Forsendelse)**")
 
-        har_fg = st.checkbox("Faslig gods")
-        ant_fw = st.number_input("Antal farlig gods", min_value=0, value=1 if har_fg else 0) if har_fg else 0
+        har_fg = st.checkbox("Farlig gods")
+        ant_fg = st.number_input("Antal farlig gods", min_value=0, value=1 if har_fg else 0) if har_fg else 0
 
         har_ft = st.checkbox("Festool registring")
         ant_ft = st.number_input("Antal Festool registreringer", mim_value=0, value=1 if har_ft else 0) if har_ft else 0
@@ -138,7 +141,7 @@ else:
             tillaeg = []
             if har_fg and ant_fg > 0:
                 tillaeg.append(f"Farlig gods: {ant_fg}")
-            if har_ft and ant_ft > 0:
+             if har_ft and ant_ft > 0:
                 tillaeg.append(f"Festool: {ant_ft}")
             if har_srv and ant_srv > 0:
                 tillaeg.append(f"Service: {ant_srv}")
@@ -151,28 +154,30 @@ else:
 
 st.divider()
 
-st.subheader("Aktive registreringer for ruten")
 if st.session_state.malinger:
     df_aktiv = pd.DataFrame(st.session_state.malinger)
-    st.dataframe(df_aktiv, use_container_width=True)
-
-    col_a, col_b = st.columns(2)
-    with col_a:
-        if st.button("Angre seneste tryk", use_container_width=True):
-            st.session_state.malinger.pop()
-            if st.session_state.pluk_trin > 1:
-                st.session_state.pluk_trin -= 1
-            st.rerun()
-    with col_b:
-        if st.button("Nulstil rute", use_container_width=True):
-            st.session_state.malinger = []
-            st.session_state.rute_aktiv = False
-            st.session_state.valgt_sorensen = False
-            st.session_state.pluk_trin = 1
-            st.session_state.bekraeft_send = False
-            st.rerun()
-
-    st.divider()
+    
+    # Skjult expander til tabel og rettelsesknapper
+    with st.expander("Vis registreringer (Ret/Nulstil)"):
+        st.dataframe(df_aktiv, use_container_width=True)
+        col_a, col_b = st.columns(2)
+        with col_a:
+            if st.button("Angre seneste tryk", use_container_width=True):
+                st.session_state.malinger.pop()
+                if st.button("Angre", use_container_width=True):
+                    if st.session_state.pluk_trin > 1:
+                        st.session_state.pluk_trin -= 1
+                    st.session_state.transport_trykket = False
+                    st.rerun()
+        with col_b:
+            if st.button("Nulstil rute", use_container_width=True):
+                st.session_state.malinger = []
+                st.session_state.rute_aktiv = False
+                st.session_state.valgt_sorensen = False
+                st.session_state.pluk_trin = 1
+                st.session_state.transport_trykket = False
+                st.session_state.bekraeft_send = False
+                st.rerun()
 
     st.subheader("3. Indsend data")
     if not st.session_state.bekraeft_send:
@@ -183,32 +188,41 @@ if st.session_state.malinger:
         st.warning("Er du sikker?")
         c_ja, c_nej = st.columns(2)
         with c_ja:
-            if st.button("Ja", type="primary", use_container_width=True):
-                success_msg = False
-                if HAS_GSHEETS:
+             if st.button("Ja", type="primary", use_container_width=True):
+                # Send til Google Forms
+                FORM_RESPONSE_URL = "https://docs.google.com/forms/d/e/1FAIpQL SdAu8l9zMvnPmeDrQnJC3Y@jvjJp--pjUPcP5A8aCUxu0CSA/formResponse"
+                FORM_RESPONSE_URL = FORM_RESPONSE_URL.replace(" ", "").replace("@", "2")
+                
+                fejl_antal = 0
+                for row in st.session_state.malinger:
                     try:
-                        conn = st.connection("gsheets", type=GSheetsConnection)
-                        existing_data = conn.read()
-                        updated_df = pd.concat([existing_data, df_aktiv], ignore_index=True)
-                        conn.update(data=updated_df)
-                        st.success("Målingen er nu indsendt til det centrale datalager!")
-                        success_msg = True
+                        data_payload = urllib.parse.urlencode({
+                            'entry.1109742049': row.get('Dato', ''),
+                            'entry.785756491': row.get('Tidspunkt', ''),
+                            'entry.1387317177': row.get('Initialer', ''),
+                            'entry.1597480740': row.get('Pluktype', ''),
+                            'entry.2111546458': row.get('Handling', ''),
+                            'entry.1581018160': row.get('Ekstra_Info', '')
+                        }).encode('utf-8')
+                        
+                        req = urllib.request.Request(FORM_RESPONSE_URL, data=data_payload)
+                        urllib.request.urlopen(req)
                     except Exception as e:
-                        pass
-                
-                if not success_msg:
-                    st.success("Målingen er registreret og klar til næste opgave.")
-                
+                        fejl_antal += 1
+
                 # Nulstil kun ruten, BEHOLD INITIALER!
                 st.session_state.malinger = []
                 st.session_state.rute_aktiv = False
                 st.session_state.valgt_sorensen = False
                 st.session_state.pluk_trin = 1
+                st.session_state.transport_trykket = False
                 st.session_state.bekraeft_send = False
+                st.success("Målingen er nu indsendt og gemt i dit Google Sheet!")
                 st.rerun()
+
         with c_nej:
             if st.button("Nej", use_container_width=True):
                 st.session_state.bekraeft_send = False
                 st.rerun()
 else:
-    st.info("Ingen aktive registreringer enduu. Indtast initialer og tryk 'Start plukrute'.")
+    st.info("Ingen aktive registreringer endnuu. Indtast initialer og tryk 'Start plukrute'.")
