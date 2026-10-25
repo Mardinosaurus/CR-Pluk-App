@@ -223,17 +223,15 @@ if st.session_state.malinger:
 else:
     st.info("Ingen aktive registreringer endnu. Indtast initialer og tryk 'Start plukrute'.")
 
-```
 
-1. Tryk på **Cmd + S** (Gem filen).
 
----
+
 
 ### Løsning B: Alternativ direkte terminal-kommando (Mac)
 
-Hvis du hellere vil køre en ren terminal-kommando i Mac-terminalen uden om udklipsholderfejl, kan du køre dette direkte:
 
-```
+
+
 cat << 'EOF' > app.py
 import streamlit as st
 import pandas as pd
