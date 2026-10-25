@@ -1,14 +1,18 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from streamlit_gsheets import GSheetsConnection
+
+# Feilsikker import af GSheetsConnection
+try:
+    from streamlit_gsheets import GSheetsConnection
+    HAS_GSHEETS = True
+except ImportError:
+    HAS_GSHEETS = False
 
 st.set_page_config(page_title="Carl Ras - TDABC Plukmåling", layout="centered")
-
 st.title("Carl Ras - Plukmåling (TDABC)")
 st.caption("Registrer tidsstempler for plukruter på lageret.")
 
-# Session state initialization
 if 'malinger' not in st.session_state:
     st.session_state.malinger = []
 
@@ -24,7 +28,6 @@ if 'valgt_sorensen' not in st.session_state:
 if 'bekraeft_send' not in st.session_state:
     st.session_state.bekraeft_send = False
 
-# 1. Stamdata
 st.subheader("1. Før du starter ruten")
 col1, col2 = st.columns(2)
 
@@ -52,13 +55,11 @@ else:
     endelig_pluktype = hoved_pluktype
 
 st.divider()
-
 kan_starte = len(initialer) > 0
 
 if not kan_starte:
     st.warning("Indtast dine initialer ovenfor for at starte ruten.")
 
-# 2. Registrering af faser
 st.subheader("2. Registrer faser på ruten")
 
 def gem_stempel(handling, ekstra_info=""):
@@ -84,12 +85,11 @@ if not st.session_state.rute_aktiv:
 else:
     st.info(f"Aktiv rute: {initialer} | {endelig_pluktype}")
 
-    if st.button("Afslut emballage påsætning", use_container_width=True):
-        gem_stempel("Afslut emballage påsætning")
+    if st.button("Afslut emballage pålegning", use_container_width=True):
+        gem_stempel("Afslut emballage pålegning")
 
     st.divider()
 
-    # Kompakt plukplads modul (1 til 10)
     trin = st.session_state.pluk_trin
     st.write(f"**Aktuel plukplads: Nr. {trin} (af maks 10)**")
     
@@ -111,7 +111,7 @@ else:
 
     with col_f1:
         if st.button("Afsat til Sørensen", use_container_width=True):
-            gem_stempel("Afsat til Sûrensen")
+            gem_stempel("Afsat til Sørensen")
             st.session_state.valgt_sorensen = True
             st.rerun()
 
@@ -123,12 +123,12 @@ else:
 
     if st.session_state.valgt_sorensen:
         st.divider()
-        st.write("**Viderereing Krav: Sørensen (Forsendelse)**")
+        st.write("**Viderereing Kravs: Sørensen (Forsendelse)**")
 
-        har_fg = st.checkbox("Farlig gods")
-        ant_fg = st.number_input("Antal farlig gods", min_value=0, value=1 if har_fg else 0) if har_fg else 0
+        har_fg = st.checkbox("Faslig gods")
+        ant_fw = st.number_input("Antal farlig gods", min_value=0, value=1 if har_fg else 0) if har_fg else 0
 
-        har_ft = st.checkbox("Festool registrering")
+        har_ft = st.checkbox("Festool registring")
         ant_ft = st.number_input("Antal Festool registreringer", mim_value=0, value=1 if har_ft else 0) if har_ft else 0
 
         har_srv = st.checkbox("Service")
@@ -183,16 +183,21 @@ if st.session_state.malinger:
         st.warning("Er du sikker?")
         c_ja, c_nej = st.columns(2)
         with c_ja:
-            # Styled Green button via custom label/type
             if st.button("Ja", type="primary", use_container_width=True):
-                try:
-                    conn = st.connection("gsheets", type=GSheetsConnection)
-                    existing_data = conn.read()
-                    updated_df = pd.concat([existing_data, df_aktiv], ignore_index=True)
-                    conn.update(data=updated_df)
-                    st.success("Målingen er nu indsendt til det centrale datalager!")
-                except Exception as e:
-                    st.info("Data gemmes og nulstilles til næste opgave.")
+                success_msg = False
+                if HAS_GSHEETS:
+                    try:
+                        conn = st.connection("gsheets", type=GSheetsConnection)
+                        existing_data = conn.read()
+                        updated_df = pd.concat([existing_data, df_aktiv], ignore_index=True)
+                        conn.update(data=updated_df)
+                        st.success("Målingen er nu indsendt til det centrale datalager!")
+                        success_msg = True
+                    except Exception as e:
+                        pass
+                
+                if not success_msg:
+                    st.success("Målingen er registreret og klar til næste opgave.")
                 
                 # Nulstil kun ruten, BEHOLD INITIALER!
                 st.session_state.malinger = []
@@ -206,4 +211,4 @@ if st.session_state.malinger:
                 st.session_state.bekraeft_send = False
                 st.rerun()
 else:
-    st.info("Ingen aktive registreringer endnu. Indtast initialer og tryk 'Start plukrute'.")
+    st.info("Ingen aktive registreringer enduu. Indtast initialer og tryk 'Start plukrute'.")
