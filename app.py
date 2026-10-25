@@ -222,13 +222,25 @@ if st.session_state.malinger:
                         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                     }
                     for row in st.session_state.malinger:
+                        d_str = str(row.get('Dato', ''))
+                        t_str = str(row.get('Tidspunkt', ''))
+                        
                         payload = {
-                            'entry.1109742049': str(row.get('Dato', '')),
-                            'entry.785756491': str(row.get('Tidspunkt', '')),
+                            # Standard string format
+                            'entry.1109742049': d_str,
                             'entry.1387317177': str(row.get('Initialer', '')),
                             'entry.1597480740': str(row.get('Pluktype', '')),
                             'entry.2111546458': str(row.get('Handling', '')),
-                            'entry.1581018160': str(row.get('Ekstra_Info', ''))
+                            'entry.785756491': t_str,
+                            'entry.1581018160': str(row.get('Ekstra_Info', '')),
+                            
+                            # Google Form Date/Time split format support
+                            'entry.1109742049_year': d_str.split('-')[0] if '-' in d_str else '',
+                            'entry.1109742049_month': d_str.split('-')[1] if '-' in d_str else '',
+                            'entry.1109742049_day': d_str.split('-')[2] if '-' in d_str else '',
+                            
+                            'entry.785756491_hour': t_str.split(':')[0] if ':' in t_str else '',
+                            'entry.785756491_minute': t_str.split(':')[1] if ':' in t_str else ''
                         }
                         try:
                             res = requests.post(FORM_RESPONSE_URL, data=payload, headers=headers, timeout=10)
