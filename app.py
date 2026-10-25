@@ -52,7 +52,7 @@ else:
     endelig_pluktype = hoved_pluktype
 
 st.divider()
-kan_starte = len(initialer) &gt; 0
+kan_starte = len(initialer) > 0
 
 if not kan_starte:
     st.warning("Indtast dine initialer ovenfor for at starte ruten.")
@@ -140,11 +140,11 @@ else:
 
         if st.button("Gem tillægstjenester og afslut rute", type="primary", use_container_width=True):
             tillaeg = []
-            if har_fg and ant_fg &gt; 0:
+            if har_fg and ant_fg > 0:
                 tillaeg.append(f"Farlig gods: {ant_fg}")
-            if har_ft and ant_ft &gt; 0:
+            if har_ft and ant_ft > 0:
                 tillaeg.append(f"Festool: {ant_ft}")
-            if har_srv and ant_srv &gt; 0:
+            if har_srv and ant_srv > 0:
                 tillaeg.append(f"Service: {ant_srv}")
 
             info_str = ", ".join(tillaeg) if tillaeg else "Ingen tillæg"
@@ -165,7 +165,7 @@ if st.session_state.malinger:
         with col_a:
             if st.button("Angre seneste tryk", use_container_width=True):
                 st.session_state.malinger.pop()
-                if st.session_state.pluk_trin &gt; 1:
+                if st.session_state.pluk_trin > 1:
                     st.session_state.pluk_trin -= 1
                 st.session_state.transport_trykket = False
                 st.rerun()
@@ -234,7 +234,7 @@ else:
 Hvis du hellere vil køre en ren terminal-kommando i Mac-terminalen uden om udklipsholderfejl, kan du køre dette direkte:
 
 ```
-cat &lt;&lt; 'EOF' &gt; app.py
+cat << 'EOF' > app.py
 import streamlit as st
 import pandas as pd
 from datetime import datetime
@@ -286,7 +286,7 @@ else:
     endelig_pluktype = hoved_pluktype
 
 st.divider()
-kan_starte = len(initialer) &gt; 0
+kan_starte = len(initialer) > 0
 
 if not kan_starte:
     st.warning("Indtast dine initialer ovenfor for at starte ruten.")
@@ -336,7 +336,7 @@ else:
         if st.button(f"Afslut pluk {trin}", use_container_width=True):
             gem_stempel(f"Afslut pluk {trin}")
             st.session_state.transport_trykket = False
-            if st.session_state.pluk_trin &lt; 10:
+            if st.session_state.pluk_trin < 10:
                 st.session_state.pluk_trin += 1
             st.rerun()
 
@@ -372,11 +372,11 @@ else:
 
         if st.button("Gem tillægstjenester og afslut rute", type="primary", use_container_width=True):
             tillaeg = []
-            if har_fg and ant_fg &gt; 0:
+            if har_fg and ant_fg > 0:
                 tillaeg.append(f"Farlig gods: {ant_fg}")
-            if har_ft and ant_ft &gt; 0:
+            if har_ft and ant_ft > 0:
                 tillaeg.append(f"Festool: {ant_ft}")
-            if har_srv and ant_srv &gt; 0:
+            if har_srv and ant_srv > 0:
                 tillaeg.append(f"Service: {ant_srv}")
 
             info_str = ", ".join(tillaeg) if tillaeg else "Ingen tillæg"
@@ -396,7 +396,7 @@ if st.session_state.malinger:
         with col_a:
             if st.button("Angre seneste tryk", use_container_width=True):
                 st.session_state.malinger.pop()
-                if st.session_state.pluk_trin &gt; 1:
+                if st.session_state.pluk_trin > 1:
                     st.session_state.pluk_trin -= 1
                 st.session_state.transport_trykket = False
                 st.rerun()
