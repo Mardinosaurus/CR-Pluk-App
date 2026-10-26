@@ -76,14 +76,14 @@ hoved_pluktype = st.selectbox(
 )
 
 palle_underType = ""
-antal_pluk_rute = 1
+antal_kassepluk = 1
 
 if hoved_pluktype == "Pallepluk":
     palle_underType = st.radio("Vælg palletype *", ["Helpalle pluk", "Halv pallepluk"], horizontal=True)
     endelig_pluktype = f"Pallepluk ({palle_underType})"
 elif hoved_pluktype == "Kassepluk":
-    antal_pluk_rute = st.number_input("Antal pluk på ruten *", min_value=1, max_value=500, value=1, step=1)
-    endelig_pluktype = f"Kassepluk ({antal_pluk_rute} pluk på rute)"
+    antal_kassepluk = st.number_input("Antal pluk på ruten", min_value=1, max_value=100, value=1, step=1)
+    endelig_pluktype = f"Kassepluk ({antal_kassepluk} pluk på rute)"
 else:
     endelig_pluktype = hoved_pluktype
 
@@ -100,14 +100,13 @@ st.subheader("2. Registrer faser på ruten")
 
 def gem_stempel(handling, ekstra_info=""):
     nu = datetime.now()
-    info = ekstra_info if ekstra_info and ekstra_info.strip() != "" else "-"
     st.session_state.malinger.append({
         'Dato': nu.strftime('%Y-%m-%d'),
         'Tidspunkt': nu.strftime('%H:%M'),
-        'Initialer': initialer if initialer else "-",
-        'Pluktype': endelig_pluktype if endelig_pluktype else "-",
-        'Handling': handling if handling else "-",
-        'Ekstra_Info': info
+        'Initialer': initialer,
+        'Pluktype': endelig_pluktype,
+        'Handling': handling,
+        'Ekstra_Info': ekstra_info if ekstra_info else "-"
     })
 
 if not st.session_state.rute_aktiv:
@@ -155,32 +154,33 @@ else:
 
     st.divider()
 
-    # Option til bemærkning eller fejlmelding på ruten
-    with st.expander("⚠️ Tilføj bemærkning / fejl på ruten (valgfri)", expanded=False):
-        bemaerkning_tekst = st.text_input("Skriv bemærkning eller fejl", key="rute_bemaerkning_input", placeholder="f.eks. Manglende vare på plads 3, beskadiget kasse osv.")
-        if st.button("Log bemærkning"):
-            if bemaerkning_tekst.strip():
-                gem_stempel("Bemærkning/Fejl", ekstra_info=bemaerkning_tekst.strip())
-                st.success("Bemærkning registreret!")
-                st.rerun()
-            else:
-                st.warning("Skriv venligst en bemærkning i feltet først.")
-
-    st.divider()
-
     st.subheader("Afslutning af rute")
+
+    # Bemærkning / Fejl på ruten
+    with st.expander("⚠️ Tilføj bemærkning / fejl på rute (valgfri)"):
+        bemaerkning_input = st.text_input("Beskrivelse af fejl eller afvigelse:", key="bemaerkning_input_field", placeholder="f.eks. manglende vare, beskadiget emballage")
+        if st.button("Gem bemærkning"):
+            if bemaerkning_input.strip():
+                gem_stempel("Fejl / Bemærkning", ekstra_info=bemaerkning_input.strip())
+                st.success(f"Gemt bemærkning: '{bemaerkning_input.strip()}'")
+                st.rerun()
+
     col_f1, col_f2 = st.columns(2)
 
     with col_f1:
         sor_type = "primary" if st.session_state.valgt_sorensen else "secondary"
         if st.button("Afsat til Sørensen", type=sor_type, use_container_width=True):
+            # Skift til Sørensen: deaktiver forsendelsesknap og aktiver Sørensen
             st.session_state.valgt_sorensen = True
+            st.session_state.valgt_forsendelse = False
             gem_stempel("Afsat til Sørensen")
             st.rerun()
 
     with col_f2:
-        fors_type = "primary" if st.session_state.valgt_forsendelse else "secondary"
-        if st.button("Forsendelsesproces begyndt", type=fors_type, use_container_width=True):
+        for_type = "primary" if st.session_state.valgt_forsendelse else "secondary"
+        if st.button("Forsendelsesproces begyndt", type=for_type, use_container_width=True):
+            # Skift til Forsendelse: deaktiver Sørensen (så undermenu og rød farve fjernes!)
+            st.session_state.valgt_sorensen = False
             st.session_state.valgt_forsendelse = True
             gem_stempel("Forsendelsesproces begyndt")
             st.rerun()
@@ -209,16 +209,16 @@ else:
 
             info_str = ", ".join(tillaeg) if tillaeg else "Ingen tillæg"
             gem_stempel("Tillægstjenester v. Sørensen", ekstra_info=info_str)
-            st.success("Tillægstjenester gemt!")
+            st.success("Tillægstjenester registreret!")
             st.rerun()
 
     st.divider()
     if st.button("Afslut plukordre", type="primary", use_container_width=True):
-        bem = st.session_state.get("rute_bemaerkning_input", "").strip()
-        ekstra_txt = f"Bemærkning: {bem}" if bem else "-"
-        gem_stempel("Afslut plukordre", ekstra_info=ekstra_txt)
+        gem_stempel("Afslut plukordre")
         st.session_state.rute_aktiv = False
         st.session_state.klar_til_indsendelse = True
+        st.session_state.valgt_sorensen = False
+        st.session_state.valgt_forsendelse = False
         st.rerun()
 
 st.divider()
@@ -242,17 +242,16 @@ if st.session_state.malinger:
                 
                 with st.spinner("Sender registreringer til Google Form... Vent venligst..."):
                     headers = {
-                        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'Content-Type': 'application/x-www-form-urlencoded'
+                        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                     }
                     for row in st.session_state.malinger:
                         payload = {
-                            'entry.1109742049': str(row.get('Dato', '-')),
-                            'entry.785756491': str(row.get('Tidspunkt', '-')),
-                            'entry.1387317177': str(row.get('Initialer', '-')),
-                            'entry.1597480740': str(row.get('Pluktype', '-')),
-                            'entry.2111546458': str(row.get('Handling', '-')),
-                            'entry.1581018160': str(row.get('Ekstra_Info', '-'))
+                            'entry.1109742049': str(row.get('Dato', '')),
+                            'entry.785756491': str(row.get('Tidspunkt', '')),
+                            'entry.1387317177': str(row.get('Initialer', '')),
+                            'entry.1597480740': str(row.get('Pluktype', '')),
+                            'entry.2111546458': str(row.get('Handling', '')),
+                            'entry.1581018160': str(row.get('Ekstra_Info', '-')) or '-'
                         }
                         try:
                             res = requests.post(FORM_RESPONSE_URL, data=payload, headers=headers, timeout=10)
