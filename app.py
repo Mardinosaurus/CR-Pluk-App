@@ -54,6 +54,8 @@ if 'klar_til_indsendelse' not in st.session_state:
     st.session_state.klar_til_indsendelse = False
 if 'valgt_sorensen' not in st.session_state:
     st.session_state.valgt_sorensen = False
+if 'valgt_forsendelse' not in st.session_state:
+    st.session_state.valgt_forsendelse = False
 if 'bekraeft_send' not in st.session_state:
     st.session_state.bekraeft_send = False
 if 'transport_trykket' not in st.session_state:
@@ -74,14 +76,14 @@ hoved_pluktype = st.selectbox(
 )
 
 palle_underType = ""
-antal_kassepluk = 1
+antal_pluk_rute = 1
 
 if hoved_pluktype == "Pallepluk":
     palle_underType = st.radio("Vælg palletype *", ["Helpalle pluk", "Halv pallepluk"], horizontal=True)
     endelig_pluktype = f"Pallepluk ({palle_underType})"
 elif hoved_pluktype == "Kassepluk":
-    antal_kassepluk = st.number_input("Antal forventede pluk", min_value=1, max_value=100, value=1, step=1)
-    endelig_pluktype = f"Kassepluk ({antal_kassepluk} pluk)"
+    antal_pluk_rute = st.number_input("Antal pluk på ruten *", min_value=1, max_value=500, value=1, step=1)
+    endelig_pluktype = f"Kassepluk ({antal_pluk_rute} pluk på rute)"
 else:
     endelig_pluktype = hoved_pluktype
 
@@ -96,15 +98,16 @@ elif st.session_state.klar_til_indsendelse:
 # 2. Registrering af faser
 st.subheader("2. Registrer faser på ruten")
 
-def gem_stempel(handling, ekstra_info="-"):
+def gem_stempel(handling, ekstra_info=""):
     nu = datetime.now()
+    info = ekstra_info if ekstra_info and ekstra_info.strip() != "" else "-"
     st.session_state.malinger.append({
         'Dato': nu.strftime('%Y-%m-%d'),
-        'Tidspunkt': nu.strftime('%H:%M:%S'),
+        'Tidspunkt': nu.strftime('%H:%M'),
         'Initialer': initialer if initialer else "-",
         'Pluktype': endelig_pluktype if endelig_pluktype else "-",
         'Handling': handling if handling else "-",
-        'Ekstra_Info': ekstra_info if ekstra_info else "-"
+        'Ekstra_Info': info
     })
 
 if not st.session_state.rute_aktiv:
@@ -115,6 +118,7 @@ if not st.session_state.rute_aktiv:
         st.session_state.transport_trykket = False
         st.session_state.emballage_trykket = False
         st.session_state.valgt_sorensen = False
+        st.session_state.valgt_forsendelse = False
         st.session_state.bekraeft_send = False
         gem_stempel("Start plukrute")
         st.rerun()
@@ -129,9 +133,9 @@ else:
 
     st.divider()
 
-    # Kompakt plukplads modul (1 til 10)
+    # Kompakt plukplads modul (1 til 100)
     trin = st.session_state.pluk_trin
-    st.write(f"**Aktuel plukplads: Nr. {trin} (af maks 10)**")
+    st.write(f"**Aktuel plukplads: Nr. {trin} (af maks 100)**")
     
     col_t1, col_t2 = st.columns(2)
     with col_t1:
@@ -145,9 +149,22 @@ else:
         if st.button(f"Afslut pluk {trin}", use_container_width=True):
             gem_stempel(f"Afslut pluk {trin}")
             st.session_state.transport_trykket = False
-            if st.session_state.pluk_trin < 10:
+            if st.session_state.pluk_trin < 100:
                 st.session_state.pluk_trin += 1
             st.rerun()
+
+    st.divider()
+
+    # Option til bemærkning eller fejlmelding på ruten
+    with st.expander("⚠️ Tilføj bemærkning / fejl på ruten (valgfri)", expanded=False):
+        bemaerkning_tekst = st.text_input("Skriv bemærkning eller fejl", key="rute_bemaerkning_input", placeholder="f.eks. Manglende vare på plads 3, beskadiget kasse osv.")
+        if st.button("Log bemærkning"):
+            if bemaerkning_tekst.strip():
+                gem_stempel("Bemærkning/Fejl", ekstra_info=bemaerkning_tekst.strip())
+                st.success("Bemærkning registreret!")
+                st.rerun()
+            else:
+                st.warning("Skriv venligst en bemærkning i feltet først.")
 
     st.divider()
 
@@ -155,18 +172,17 @@ else:
     col_f1, col_f2 = st.columns(2)
 
     with col_f1:
-        # Når "Afsat til Sørensen" er valgt/trykket på, lyser den rød (primary)
         sor_type = "primary" if st.session_state.valgt_sorensen else "secondary"
         if st.button("Afsat til Sørensen", type=sor_type, use_container_width=True):
-            gem_stempel("Afsat til Sørensen")
             st.session_state.valgt_sorensen = True
+            gem_stempel("Afsat til Sørensen")
             st.rerun()
 
     with col_f2:
-        if st.button("Afslut pluk", use_container_width=True):
-            gem_stempel("Afslut pluk")
-            st.session_state.rute_aktiv = False
-            st.session_state.klar_til_indsendelse = True
+        fors_type = "primary" if st.session_state.valgt_forsendelse else "secondary"
+        if st.button("Forsendelsesproces begyndt", type=fors_type, use_container_width=True):
+            st.session_state.valgt_forsendelse = True
+            gem_stempel("Forsendelsesproces begyndt")
             st.rerun()
 
     if st.session_state.valgt_sorensen:
@@ -182,7 +198,7 @@ else:
         har_srv = st.checkbox("Service")
         ant_srv = st.number_input("Antal service", min_value=0, value=1 if har_srv else 0) if har_srv else 0
 
-        if st.button("Gem tillægstjenester og afslut rute", type="primary", use_container_width=True):
+        if st.button("Gem tillægstjenester", type="primary", use_container_width=True):
             tillaeg = []
             if har_fg and ant_fg > 0:
                 tillaeg.append(f"Farlig gods: {ant_fg}")
@@ -193,10 +209,17 @@ else:
 
             info_str = ", ".join(tillaeg) if tillaeg else "Ingen tillæg"
             gem_stempel("Tillægstjenester v. Sørensen", ekstra_info=info_str)
-            st.session_state.valgt_sorensen = False
-            st.session_state.rute_aktiv = False
-            st.session_state.klar_til_indsendelse = True
+            st.success("Tillægstjenester gemt!")
             st.rerun()
+
+    st.divider()
+    if st.button("Afslut plukordre", type="primary", use_container_width=True):
+        bem = st.session_state.get("rute_bemaerkning_input", "").strip()
+        ekstra_txt = f"Bemærkning: {bem}" if bem else "-"
+        gem_stempel("Afslut plukordre", ekstra_info=ekstra_txt)
+        st.session_state.rute_aktiv = False
+        st.session_state.klar_til_indsendelse = True
+        st.rerun()
 
 st.divider()
 
@@ -224,12 +247,12 @@ if st.session_state.malinger:
                     }
                     for row in st.session_state.malinger:
                         payload = {
-                            'entry.1109742049': str(row.get('Dato') or '-'),
-                            'entry.785756491': str(row.get('Tidspunkt') or '-'),
-                            'entry.1387317177': str(row.get('Initialer') or '-'),
-                            'entry.1597480740': str(row.get('Pluktype') or '-'),
-                            'entry.2111546458': str(row.get('Handling') or '-'),
-                            'entry.1581018160': str(row.get('Ekstra_Info') or '-')
+                            'entry.1109742049': str(row.get('Dato', '-')),
+                            'entry.785756491': str(row.get('Tidspunkt', '-')),
+                            'entry.1387317177': str(row.get('Initialer', '-')),
+                            'entry.1597480740': str(row.get('Pluktype', '-')),
+                            'entry.2111546458': str(row.get('Handling', '-')),
+                            'entry.1581018160': str(row.get('Ekstra_Info', '-'))
                         }
                         try:
                             res = requests.post(FORM_RESPONSE_URL, data=payload, headers=headers, timeout=10)
@@ -247,6 +270,7 @@ if st.session_state.malinger:
                     st.session_state.rute_aktiv = False
                     st.session_state.klar_til_indsendelse = False
                     st.session_state.valgt_sorensen = False
+                    st.session_state.valgt_forsendelse = False
                     st.session_state.pluk_trin = 1
                     st.session_state.transport_trykket = False
                     st.session_state.emballage_trykket = False
