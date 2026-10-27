@@ -1,20 +1,11 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import zoneinfo
 import requests
-import random
-import string
+from zoneinfo import ZoneInfo
+import uuid
 
 st.set_page_config(page_title="Carl Ras - TDABC Plukmåling", layout="centered")
-
-# Helper function to get current time in Danish timezone (Europe/Copenhagen)
-def get_danish_now():
-    try:
-        tz = zoneinfo.ZoneInfo("Europe/Copenhagen")
-        return datetime.now(tz)
-    except Exception:
-        return datetime.now()
 
 # Skjul ALT Streamlit-relateret UI (header, footer, viewer badge, profil, deploy knap osv.)
 hide_st_style = """
@@ -75,121 +66,179 @@ if 'emballage_trykket' not in st.session_state:
     st.session_state.emballage_trykket = False
 if 'rute_id' not in st.session_state:
     st.session_state.rute_id = ""
+if 'berta_valgt' not in st.session_state:
+    st.session_state.berta_valgt = "Nej"
 if 'berta_transport_trykket' not in st.session_state:
     st.session_state.berta_transport_trykket = False
+if 'palle_type' not in st.session_state:
+    st.session_state.palle_type = "Helpalle pluk"
+if 'stafet_aktiv' not in st.session_state:
+    st.session_state.stafet_aktiv = False
 
-# 1. Stamdata
-st.subheader("1. Før du starter ruten")
+# Helper for dansk lokal tid
+def get_dansk_tid():
+    return datetime.now(ZoneInfo("Europe/Copenhagen"))
 
-initialer = st.text_input("Dine initialer *", value=st.session_state.get('saved_initialer', ''), placeholder="f.eks. MHA").strip()
-if initialer:
-    st.session_state.saved_initialer = initialer
+# 1. Stamdata (vises KUN når ruten endnu IKKE er aktiv)
+if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse:
+    st.subheader("1. Før du starter ruten")
 
-hoved_pluktype = st.selectbox(
-    "Vælg pluktype *",
-    ["Kassepluk", "Pallepluk", "Længde pluk", "Buffer pluk"]
-)
+    initialer = st.text_input("Dine initialer *", value=st.session_state.get('saved_initialer', ''), placeholder="f.eks. MHA").strip()
+    if initialer:
+        st.session_state.saved_initialer = initialer
 
-palle_underType = ""
-antal_kassepluk = 1
+    stregkode = st.text_input("Scan eller indtast stregkode / ordrenummer (valgfri):", key="stregkode_input", placeholder="Scan stregkode her...").strip()
+    if stregkode:
+        st.session_state.gemt_stregkode = stregkode
+    else:
+        st.session_state.gemt_stregkode = "-"
 
-if hoved_pluktype == "Pallepluk":
-    palle_underType = st.radio("Vælg palletype *", ["Helpalle pluk", "Halv pallepluk"], horizontal=True)
-    endelig_pluktype = f"Pallepluk ({palle_underType})"
-elif hoved_pluktype == "Kassepluk":
-    antal_kassepluk = st.number_input("Antal pluk på ruten", min_value=1, max_value=100, value=1, step=1)
-    endelig_pluktype = f"Kassepluk ({antal_kassepluk} pluk på rute)"
-else:
-    endelig_pluktype = hoved_pluktype
+    hoved_pluktype = st.selectbox(
+        "Vælg pluktype *",
+        ["Kassepluk", "Pallepluk", "Længde pluk", "Buffer pluk", "Lynpluk"]
+    )
+    st.session_state.valgt_hoved_pluktype = hoved_pluktype
 
-st.divider()
-kan_starte = len(initialer) > 0 and not st.session_state.klar_til_indsendelse
+    if hoved_pluktype == "Kassepluk":
+        antal_kassepluk = st.number_input("Antal pluk på ruten", min_value=1, max_value=100, value=1, step=1)
+        st.session_state.endelig_pluktype = f"Kassepluk ({antal_kassepluk} pluk på rute)"
+    else:
+        st.session_state.endelig_pluktype = hoved_pluktype
 
-if not len(initialer) > 0:
-    st.warning("Indtast dine initialer ovenfor for at starte ruten.")
+    st.divider()
+    kan_starte = len(initialer) > 0
+
+    if not len(initialer) > 0:
+        st.warning("Indtast dine initialer ovenfor for at starte ruten.")
+    else:
+        if st.button("Start plukrute", type="primary", use_container_width=True):
+            st.session_state.rute_id = f"R-{get_dansk_tid().strftime('%H%M%S')}-{uuid.uuid4().hex[:3].upper()}"
+            st.session_state.rute_aktiv = True
+            st.session_state.klar_til_indsendelse = False
+            st.session_state.pluk_trin = 1
+            st.session_state.transport_trykket = False
+            st.session_state.emballage_trykket = False
+            st.session_state.valgt_sorensen = False
+            st.session_state.valgt_forsendelse = False
+            st.session_state.bekraeft_send = False
+            st.session_state.berta_valgt = "Nej"
+            st.session_state.berta_transport_trykket = False
+            st.session_state.stafet_aktiv = False
+
+            # Gem første stempel
+            nu = get_dansk_tid()
+            st.session_state.malinger.append({
+                'Dato': nu.strftime('%Y-%m-%d'),
+                'Tidspunkt': nu.strftime('%H:%M:%S'),
+                'Initialer': initialer,
+                'Pluktype': st.session_state.endelig_pluktype,
+                'Handling': "Start plukrute",
+                'Ekstra_Info': f"Rute-ID: {st.session_state.rute_id} | Stregkode: {st.session_state.get('gemt_stregkode', '-')}"
+            })
+            st.rerun()
+
 elif st.session_state.klar_til_indsendelse:
     st.info("Ruten er afsluttet! Rul ned til '3. Indsend data' for at gemme målingen.")
 
-# 2. Registrering af faser
-st.subheader("2. Registrer faser på ruten")
-
+# Funktion til at gemme tidsstempler
 def gem_stempel(handling, ekstra_info=""):
-    nu = get_danish_now()
-    init_tekst = initialer if initialer else f"Ukendt [{st.session_state.get('rute_id', '')}]"
+    nu = get_dansk_tid()
+    init = st.session_state.get('saved_initialer', 'Ukendt')
+    pluk_t = st.session_state.get('endelig_pluktype', 'Standard')
+    stregk = st.session_state.get('gemt_stregkode', '-')
     
-    r_id = st.session_state.get('rute_id', '')
-    full_info = f"Rute-ID: {r_id}" if r_id else ""
+    info_tekst = f"Rute-ID: {st.session_state.rute_id} | Stregkode: {stregk}"
     if ekstra_info:
-        full_info = f"{full_info} | {ekstra_info}" if full_info else ekstra_info
+        info_tekst += f" | {ekstra_info}"
         
     st.session_state.malinger.append({
         'Dato': nu.strftime('%Y-%m-%d'),
-        'Tidspunkt': nu.strftime('%H:%M:%S'),  # Dansk lokal tid med sekunder!
-        'Initialer': init_tekst,
-        'Pluktype': endelig_pluktype,
+        'Tidspunkt': nu.strftime('%H:%M:%S'),
+        'Initialer': init,
+        'Pluktype': pluk_t,
         'Handling': handling,
-        'Ekstra_Info': full_info if full_info else "-"
+        'Ekstra_Info': info_tekst
     })
 
-if not st.session_state.rute_aktiv:
-    if st.button("Start plukrute", disabled=not kan_starte, type="primary", use_container_width=True):
-        nu_dk = get_danish_now()
-        rand_suffix = ''.join(random.choices(string.ascii_uppercase + string.digits, k=3))
-        st.session_state.rute_id = f"R-{nu_dk.strftime('%H%M%S')}-{rand_suffix}"
-        
-        st.session_state.rute_aktiv = True
-        st.session_state.klar_til_indsendelse = False
-        st.session_state.pluk_trin = 1
-        st.session_state.transport_trykket = False
-        st.session_state.emballage_trykket = False
-        st.session_state.berta_transport_trykket = False
-        st.session_state.valgt_sorensen = False
-        st.session_state.valgt_forsendelse = False
-        st.session_state.bekraeft_send = False
-        gem_stempel("Start plukrute")
-        st.rerun()
-else:
-    st.info(f"Aktiv rute: {initialer} | {endelig_pluktype} | Rute-ID: {st.session_state.rute_id}")
+# 2. Registrering af faser (Vis kun hvis ruten er aktiv)
+if st.session_state.rute_aktiv:
+    st.subheader("2. Registrer faser på ruten")
+    
+    init_vis = st.session_state.get('saved_initialer', '')
+    pluk_vis = st.session_state.get('endelig_pluktype', '')
+    stregk_vis = st.session_state.get('gemt_stregkode', '-')
+    st.info(f"**Aktiv rute:** {init_vis} | **Pluktype:** {pluk_vis} | **Stregkode:** {stregk_vis} | **ID:** {st.session_state.rute_id}")
 
-    if hoved_pluktype == "Buffer pluk":
-        st.write("**Brug af Berta**")
-        brug_berta = st.radio("Brug af Berta?", ["Nej", "Ja"], index=0, horizontal=True)
-        if brug_berta == "Ja":
-            berta_btn_type = "primary" if st.session_state.berta_transport_trykket else "secondary"
-            if st.button("Transport til Berta", type=berta_btn_type, use_container_width=True):
+    hoved_p = st.session_state.get('valgt_hoved_pluktype', '')
+
+    # Special-håndtering for Pallepluk (valg af type EFTER rute-start)
+    if hoved_p == "Pallepluk":
+        st.write("**Palletype valgt på ruten:**")
+        ptype = st.radio("Vælg palletype *", ["Helpalle pluk", "Halv pallepluk"], horizontal=True, key="palle_radio")
+        if ptype != st.session_state.palle_type:
+            st.session_state.palle_type = ptype
+            st.session_state.endelig_pluktype = f"Pallepluk ({ptype})"
+
+    # Special-håndtering for Buffer pluk (Brug af Berta)
+    if hoved_p == "Buffer pluk":
+        st.write("**Brug af Berta:**")
+        berta_opt = st.radio("Brug af Berta *", ["Nej", "Ja"], horizontal=True, key="berta_radio")
+        st.session_state.berta_valgt = berta_opt
+        
+        if berta_opt == "Ja":
+            berta_type = "primary" if st.session_state.berta_transport_trykket else "secondary"
+            if st.button("Ankommet til Berta", type=berta_type, use_container_width=True):
                 st.session_state.berta_transport_trykket = True
-                gem_stempel("Transport til Berta", ekstra_info="Brug af Berta: Ja")
+                gem_stempel("Ankommet til Berta")
                 st.rerun()
     else:
-        emb_type = "primary" if st.session_state.emballage_trykket else "secondary"
-        if st.button("Afslut emballage pålægning", type=emb_type, use_container_width=True):
-            st.session_state.emballage_trykket = True
-            gem_stempel("Afslut emballage pålægning")
-            st.rerun()
+        # For alle andre pluktyper
+        if not st.session_state.emballage_trykket:
+            emb_type = "secondary"
+            if st.button("Afslut emballage pålægning", type=emb_type, use_container_width=True):
+                st.session_state.emballage_trykket = True
+                gem_stempel("Afslut emballage pålægning")
+                st.rerun()
 
     st.divider()
 
-    # Kompakt plukplads modul (1 til 100)
-    trin = st.session_state.pluk_trin
-    st.write(f"**Aktuel plukplads: Nr. {trin} (af maks 100)**")
-    
-    col_t1, col_t2 = st.columns(2)
-    with col_t1:
-        trans_type = "primary" if st.session_state.transport_trykket else "secondary"
-        if st.button(f"Transport til pluk {trin}", type=trans_type, use_container_width=True):
-            st.session_state.transport_trykket = True
-            gem_stempel(f"Transport til plukplads {trin}")
+    # Vis KUN plukmodul hvis man ikke er i afslutningsfasen
+    if not st.session_state.valgt_sorensen and not st.session_state.valgt_forsendelse:
+        
+        # Instruks for Stafetpluk
+        st.info("ℹ️ **Husk Stafet Pluk Regel:** Tryk først på 'Ankommet til lokation', når du fysisk står ved plukpladsen!")
+
+        trin = st.session_state.pluk_trin
+        st.write(f"**Aktuel plukplads: Nr. {trin} (af maks 100)**")
+        
+        col_t1, col_t2 = st.columns(2)
+        with col_t1:
+            trans_type = "primary" if st.session_state.transport_trykket else "secondary"
+            if st.button(f"Ankommet til lokation (Pluk {trin})", type=trans_type, use_container_width=True):
+                st.session_state.transport_trykket = True
+                gem_stempel(f"Ankommet til lokation (Pluk {trin})")
+                st.rerun()
+
+        with col_t2:
+            if st.button(f"Afslut pluk {trin}", use_container_width=True):
+                gem_stempel(f"Afslut pluk {trin}")
+                st.session_state.transport_trykket = False
+                if st.session_state.pluk_trin < 100:
+                    st.session_state.pluk_trin += 1
+                st.rerun()
+
+        # Konsolideringsreol / Stafetpluk modul
+        st.write("---")
+        st.caption("Konsolideringsreol / Stafetpluk:")
+        stafet_label = "Afslut Stafet Pluk (Konsolideringsreol)" if st.session_state.stafet_aktiv else "Start Stafet Pluk (Konsolideringsreol)"
+        stafet_btn_type = "primary" if st.session_state.stafet_aktiv else "secondary"
+        if st.button(stafet_label, type=stafet_btn_type, use_container_width=True):
+            st.session_state.stafet_aktiv = not st.session_state.stafet_aktiv
+            handling_navn = "Start Stafet Pluk (Konsolideringsreol)" if st.session_state.stafet_aktiv else "Afslut Stafet Pluk (Konsolideringsreol)"
+            gem_stempel(handling_navn)
             st.rerun()
 
-    with col_t2:
-        if st.button(f"Afslut pluk {trin}", use_container_width=True):
-            gem_stempel(f"Afslut pluk {trin}")
-            st.session_state.transport_trykket = False
-            if st.session_state.pluk_trin < 100:
-                st.session_state.pluk_trin += 1
-            st.rerun()
-
-    st.divider()
+        st.divider()
 
     st.subheader("Afslutning af rute")
 
@@ -198,7 +247,7 @@ else:
         bemaerkning_input = st.text_input("Beskrivelse af fejl eller afvigelse:", key="bemaerkning_input_field", placeholder="f.eks. manglende vare, beskadiget emballage")
         if st.button("Gem bemærkning"):
             if bemaerkning_input.strip():
-                gem_stempel("Fejl / Bemærkning", ekstra_info=f"Bemærkning: {bemaerkning_input.strip()}")
+                gem_stempel("Fejl / Bemærkning", ekstra_info=bemaerkning_input.strip())
                 st.success(f"Gemt bemærkning: '{bemaerkning_input.strip()}'")
                 st.rerun()
 
@@ -220,10 +269,11 @@ else:
             gem_stempel("Forsendelsesproces begyndt")
             st.rerun()
 
+    # Fælles tillægstjenester for BÅDE Sørensen og Forsendelse
     if st.session_state.valgt_sorensen or st.session_state.valgt_forsendelse:
+        overskrift = "Sørensen (Forsendelse)" if st.session_state.valgt_sorensen else "Forsendelsesproces"
         st.divider()
-        valgt_titel = "Sørensen (Forsendelse)" if st.session_state.valgt_sorensen else "Forsendelse"
-        st.write(f"**Viderelevering Krav: {valgt_titel}**")
+        st.write(f"**Viderelevering Krav: {overskrift}**")
 
         har_fg = st.checkbox("Farlig gods")
         ant_fg = st.number_input("Antal farlig gods", min_value=0, value=1 if har_fg else 0) if har_fg else 0
@@ -244,7 +294,7 @@ else:
                 tillaeg.append(f"Service: {ant_srv}")
 
             info_str = ", ".join(tillaeg) if tillaeg else "Ingen tillæg"
-            gem_stempel(f"Tillægstjenester v. {valgt_titel}", ekstra_info=info_str)
+            gem_stempel(f"Tillægstjenester ({overskrift})", ekstra_info=info_str)
             st.success("Tillægstjenester registreret!")
             st.rerun()
 
@@ -259,6 +309,7 @@ else:
 
 st.divider()
 
+# 3. Indsend data
 if st.session_state.malinger:
     st.subheader("3. Indsend data")
     if not st.session_state.bekraeft_send:
@@ -309,7 +360,6 @@ if st.session_state.malinger:
                     st.session_state.pluk_trin = 1
                     st.session_state.transport_trykket = False
                     st.session_state.emballage_trykket = False
-                    st.session_state.berta_transport_trykket = False
                     st.session_state.bekraeft_send = False
                     st.success("Målingen er nu indsendt og gemt i dit Google Sheet!")
                     st.rerun()
