@@ -4,8 +4,6 @@ from datetime import datetime
 import requests
 from zoneinfo import ZoneInfo
 import uuid
-import cv2
-import numpy as np
 
 st.set_page_config(page_title="Carl Ras - TDABC Plukmåling", layout="centered")
 
@@ -37,6 +35,13 @@ hide_st_style = """
     div.block-container {
         padding-top: 1.5rem !important;
         padding-bottom: 2rem !important;
+    }
+
+    /* Gør knapper store og lette at ramme på touch-skærme */
+    div[data-testid="stColumn"] button {
+        min-height: 48px !important;
+        font-size: 18px !important;
+        font-weight: 600 !important;
     }
     </style>
 """
@@ -74,79 +79,14 @@ if 'palle_type' not in st.session_state:
     st.session_state.palle_type = "Helpalle pluk"
 if 'stafet_aktiv' not in st.session_state:
     st.session_state.stafet_aktiv = False
+if 'ordrenr_val' not in st.session_state:
+    st.session_state.ordrenr_val = ""
 if 'gemt_stregkode' not in st.session_state:
     st.session_state.gemt_stregkode = "-"
 
 # Helper for dansk lokal tid
 def get_dansk_tid():
     return datetime.now(ZoneInfo("Europe/Copenhagen"))
-
-# Stregkodedetektor fra kamerabillede
-def aflaes_stregkode_billede(billede_bytes):
-    try:
-        file_bytes = np.frombuffer(billede_bytes, np.uint8)
-        img_bgr = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-        if img_bgr is None:
-            return None
-            
-        if hasattr(cv2, 'barcode'):
-            detector = cv2.barcode.BarcodeDetector()
-            scales = [1.0, 0.5, 1.5, 2.0]
-            for scale in scales:
-                if scale != 1.0:
-                    h, w = img_bgr.shape[:2]
-                    test_img = cv2.resize(img_bgr, (int(w * scale), int(h * scale)))
-                else:
-                    test_img = img_bgr
-                    
-                for sub_img in [test_img, cv2.cvtColor(test_img, cv2.COLOR_BGR2GRAY)]:
-                    try:
-                        res = detector.detectAndDecodeWithType(sub_img)
-                        if res and len(res) > 0 and res[0]:
-                            info = res[0]
-                            if isinstance(info, (list, tuple)):
-                                vals = [str(x).strip() for x in info if x and str(x).strip()]
-                                if vals:
-                                    return vals[0]
-                            elif isinstance(info, str) and info.strip():
-                                return info.strip()
-                    except Exception:
-                        pass
-                        
-                    try:
-                        res_m = detector.detectAndDecodeMulti(sub_img)
-                        if res_m and len(res_m) > 1 and res_m[1]:
-                            for val in res_m[1]:
-                                if val and str(val).strip():
-                                    return str(val).strip()
-                    except Exception:
-                        pass
-
-                try:
-                    rot90 = cv2.rotate(test_img, cv2.ROTATE_90_CLOCKWISE)
-                    res_r = detector.detectAndDecodeWithType(rot90)
-                    if res_r and len(res_r) > 0 and res_r[0]:
-                        info = res_r[0]
-                        if isinstance(info, (list, tuple)):
-                            vals = [str(x).strip() for x in info if x and str(x).strip()]
-                            if vals:
-                                return vals[0]
-                        elif isinstance(info, str) and info.strip():
-                            return info.strip()
-                except Exception:
-                    pass
-
-        try:
-            qr_detector = cv2.QRCodeDetector()
-            val, _, _ = qr_detector.detectAndDecode(img_bgr)
-            if val and val.strip():
-                return val.strip()
-        except Exception:
-            pass
-            
-    except Exception:
-        pass
-    return None
 
 # 1. Stamdata (vises KUN når ruten endnu IKKE er aktiv)
 if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse:
@@ -156,29 +96,91 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
     if initialer:
         st.session_state.saved_initialer = initialer
 
-    st.write("**Stregkode / Ordrenummer:**")
+    st.write("**Ordrenummer:**")
     
-    # Officielt Streamlit Kameramodul med adgangstilladelse
-    kamera_billede = st.camera_input("Kamerascan stregkode", key="kamera_scan_input")
-    if kamera_billede is not None:
-        scannet_kode = aflaes_stregkode_billede(kamera_billede.getvalue())
-        if scannet_kode:
-            st.session_state.gemt_stregkode = scannet_kode
-            st.success(f"Stregkode aflæst: {scannet_kode}")
-        else:
-            st.warning("Ingen stregkode fundet i billedet. Prøv at holde kameraet tæt og skarpt på stregkoden, eller indtast nummeret i feltet nedenfor.")
-
-    stregkode_input = st.text_input(
-        "Indtast eller scan med laserscanner:",
-        value=st.session_state.get('gemt_stregkode', '') if st.session_state.get('gemt_stregkode', '') != '-' else '',
-        key="stregkode_text_input",
-        placeholder="Scan eller indtast stregkode/ordrenummer..."
+    # Tekstfelt der opdateres automatisk via Numpad eller direkte indtastning / laserscanner
+    ordrenr_input = st.text_input(
+        "Indtast eller scan ordrenummer:",
+        value=st.session_state.ordrenr_val,
+        key="ordrenr_text_field",
+        placeholder="f.eks. 030684132"
     ).strip()
     
-    if stregkode_input:
-        st.session_state.gemt_stregkode = stregkode_input
-    else:
-        st.session_state.gemt_stregkode = "-"
+    if ordrenr_input != st.session_state.ordrenr_val:
+        st.session_state.ordrenr_val = ordrenr_input
+    
+    st.session_state.gemt_stregkode = st.session_state.ordrenr_val if st.session_state.ordrenr_val else "-"
+
+    # Touch Numpad (3x3 Matrix + 0 + X + Enter)
+    st.caption("Skærm-tastatur (Touch Numpad 3x3):")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("1", use_container_width=True, key="btn_1"):
+            st.session_state.ordrenr_val += "1"
+            st.session_state.gemt_stregkode = st.session_state.ordrenr_val
+            st.rerun()
+    with col2:
+        if st.button("2", use_container_width=True, key="btn_2"):
+            st.session_state.ordrenr_val += "2"
+            st.session_state.gemt_stregkode = st.session_state.ordrenr_val
+            st.rerun()
+    with col3:
+        if st.button("3", use_container_width=True, key="btn_3"):
+            st.session_state.ordrenr_val += "3"
+            st.session_state.gemt_stregkode = st.session_state.ordrenr_val
+            st.rerun()
+
+    col4, col5, col6 = st.columns(3)
+    with col4:
+        if st.button("4", use_container_width=True, key="btn_4"):
+            st.session_state.ordrenr_val += "4"
+            st.session_state.gemt_stregkode = st.session_state.ordrenr_val
+            st.rerun()
+    with col5:
+        if st.button("5", use_container_width=True, key="btn_5"):
+            st.session_state.ordrenr_val += "5"
+            st.session_state.gemt_stregkode = st.session_state.ordrenr_val
+            st.rerun()
+    with col6:
+        if st.button("6", use_container_width=True, key="btn_6"):
+            st.session_state.ordrenr_val += "6"
+            st.session_state.gemt_stregkode = st.session_state.ordrenr_val
+            st.rerun()
+
+    col7, col8, col9 = st.columns(3)
+    with col7:
+        if st.button("7", use_container_width=True, key="btn_7"):
+            st.session_state.ordrenr_val += "7"
+            st.session_state.gemt_stregkode = st.session_state.ordrenr_val
+            st.rerun()
+    with col8:
+        if st.button("8", use_container_width=True, key="btn_8"):
+            st.session_state.ordrenr_val += "8"
+            st.session_state.gemt_stregkode = st.session_state.ordrenr_val
+            st.rerun()
+    with col9:
+        if st.button("9", use_container_width=True, key="btn_9"):
+            st.session_state.ordrenr_val += "9"
+            st.session_state.gemt_stregkode = st.session_state.ordrenr_val
+            st.rerun()
+
+    col0, col_del, col_ok = st.columns(3)
+    with col0:
+        if st.button("0", use_container_width=True, key="btn_0"):
+            st.session_state.ordrenr_val += "0"
+            st.session_state.gemt_stregkode = st.session_state.ordrenr_val
+            st.rerun()
+    with col_del:
+        if st.button("X (Slet)", use_container_width=True, key="btn_del"):
+            if len(st.session_state.ordrenr_val) > 0:
+                st.session_state.ordrenr_val = st.session_state.ordrenr_val[:-1]
+            st.session_state.gemt_stregkode = st.session_state.ordrenr_val if st.session_state.ordrenr_val else "-"
+            st.rerun()
+    with col_ok:
+        if st.button("Enter / OK", type="primary", use_container_width=True, key="btn_ok"):
+            st.session_state.gemt_stregkode = st.session_state.ordrenr_val if st.session_state.ordrenr_val else "-"
+            st.rerun()
 
     hoved_pluktype = st.selectbox(
         "Vælg pluktype *",
