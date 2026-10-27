@@ -4,14 +4,6 @@ from datetime import datetime
 import requests
 from zoneinfo import ZoneInfo
 import uuid
-import numpy as np
-from PIL import Image
-
-try:
-    import cv2
-    CV2_AVAILABLE = True
-except ImportError:
-    CV2_AVAILABLE = False
 
 st.set_page_config(page_title="Carl Ras - TDABC Plukmåling", layout="centered")
 
@@ -87,75 +79,6 @@ if 'gemt_stregkode' not in st.session_state:
 def get_dansk_tid():
     return datetime.now(ZoneInfo("Europe/Copenhagen"))
 
-# Stregkodedetektor
-def aflaes_stregkode_billede(billede_bytes):
-    if not CV2_AVAILABLE:
-        return None
-    try:
-        file_bytes = np.frombuffer(billede_bytes, np.uint8)
-        img_bgr = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-        if img_bgr is None:
-            return None
-            
-        if hasattr(cv2, 'barcode'):
-            detector = cv2.barcode.BarcodeDetector()
-            scales = [1.0, 0.5, 1.5, 2.0]
-            for scale in scales:
-                if scale != 1.0:
-                    h, w = img_bgr.shape[:2]
-                    resized = cv2.resize(img_bgr, (int(w * scale), int(h * scale)))
-                else:
-                    resized = img_bgr
-                    
-                for test_img in [resized, cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)]:
-                    try:
-                        res = detector.detectAndDecodeWithType(test_img)
-                        if res and len(res) > 0 and res[0]:
-                            info = res[0]
-                            if isinstance(info, (list, tuple)):
-                                vals = [str(x).strip() for x in info if x and str(x).strip()]
-                                if vals:
-                                    return vals[0]
-                            elif isinstance(info, str) and info.strip():
-                                return info.strip()
-                    except Exception:
-                        pass
-                        
-                    try:
-                        res_m = detector.detectAndDecodeMulti(test_img)
-                        if res_m and len(res_m) > 1 and res_m[1]:
-                            for val in res_m[1]:
-                                if val and str(val).strip():
-                                    return str(val).strip()
-                    except Exception:
-                        pass
-
-                try:
-                    rot90 = cv2.rotate(resized, cv2.ROTATE_90_CLOCKWISE)
-                    res_r = detector.detectAndDecodeWithType(rot90)
-                    if res_r and len(res_r) > 0 and res_r[0]:
-                        info = res_r[0]
-                        if isinstance(info, (list, tuple)):
-                            vals = [str(x).strip() for x in info if x and str(x).strip()]
-                            if vals:
-                                return vals[0]
-                        elif isinstance(info, str) and info.strip():
-                            return info.strip()
-                except Exception:
-                    pass
-
-        try:
-            qr_detector = cv2.QRCodeDetector()
-            val, _, _ = qr_detector.detectAndDecode(img_bgr)
-            if val and val.strip():
-                return val.strip()
-        except Exception:
-            pass
-            
-    except Exception:
-        pass
-    return None
-
 # 1. Stamdata (vises KUN når ruten endnu IKKE er aktiv)
 if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse:
     st.subheader("1. Før du starter ruten")
@@ -163,22 +86,6 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
     initialer = st.text_input("Dine initialer *", value=st.session_state.get('saved_initialer', ''), placeholder="f.eks. MHA").strip()
     if initialer:
         st.session_state.saved_initialer = initialer
-
-    st.write("**Stregkode / Ordrenummer:**")
-    
-    vis_kamera = st.checkbox("Åbn kamerascanner", key="vis_kamera_chk")
-    if vis_kamera:
-        if not CV2_AVAILABLE:
-            st.warning("Kamerascanning kræver at 'opencv-python-headless' er tilføjet til requirements.txt på GitHub. Du kan stadig indtaste eller scanne med laserscanner nedenfor.")
-        else:
-            kamera_billede = st.camera_input("Kamerascan", key="kamera_scan")
-            if kamera_billede is not None:
-                scannet_kode = aflaes_stregkode_billede(kamera_billede.getvalue())
-                if scannet_kode:
-                    st.session_state.gemt_stregkode = scannet_kode
-                    st.success(f"Stregkode aflæst: {scannet_kode}")
-                else:
-                    st.warning("Ingen stregkode fundet i billedet. Prøv at holde kameraet tæt og skarpt på stregkoden, eller indtast nummeret manuelt nedenfor.")
 
     stregkode_input = st.text_input(
         "Indtast eller scan med laserscanner:",
@@ -189,6 +96,8 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
     
     if stregkode_input:
         st.session_state.gemt_stregkode = stregkode_input
+    else:
+        st.session_state.gemt_stregkode = "-"
 
     hoved_pluktype = st.selectbox(
         "Vælg pluktype *",
@@ -222,7 +131,6 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
             st.session_state.berta_transport_trykket = False
             st.session_state.stafet_aktiv = False
 
-            # Gem første stempel
             nu = get_dansk_tid()
             st.session_state.malinger.append({
                 'Dato': nu.strftime('%Y-%m-%d'),
@@ -263,7 +171,6 @@ if st.session_state.rute_aktiv:
     
     hoved_p = st.session_state.get('valgt_hoved_pluktype', '')
 
-    # Special-håndtering for Pallepluk (valg af type EFTER rute-start)
     if hoved_p == "Pallepluk":
         st.write("**Palletype valgt på ruten:**")
         ptype = st.radio("Vælg palletype *", ["Helpalle pluk", "Halv pallepluk"], horizontal=True, key="palle_radio")
@@ -271,7 +178,6 @@ if st.session_state.rute_aktiv:
             st.session_state.palle_type = ptype
             st.session_state.endelig_pluktype = f"Pallepluk ({ptype})"
 
-    # Special-håndtering for Buffer pluk (Brug af Berta)
     if hoved_p == "Buffer pluk":
         st.write("**Brug af Berta:**")
         berta_opt = st.radio("Brug af Berta *", ["Nej", "Ja"], horizontal=True, key="berta_radio")
@@ -284,7 +190,6 @@ if st.session_state.rute_aktiv:
                 gem_stempel("Ankommet til Berta")
                 st.rerun()
     else:
-        # For alle andre pluktyper
         if not st.session_state.emballage_trykket:
             emb_type = "secondary"
             if st.button("Afslut emballage pålægning", type=emb_type, use_container_width=True):
@@ -294,10 +199,7 @@ if st.session_state.rute_aktiv:
 
     st.divider()
 
-    # Vis KUN plukmodul hvis man ikke er i afslutningsfasen
     if not st.session_state.valgt_sorensen and not st.session_state.valgt_forsendelse:
-        
-        # Instruks for Stafetpluk
         st.info("Husk Stafet Pluk Regel: Tryk først på 'Ankommet til lokation', når du fysisk står ved plukpladsen!")
 
         trin = st.session_state.pluk_trin
@@ -319,7 +221,6 @@ if st.session_state.rute_aktiv:
                     st.session_state.pluk_trin += 1
                 st.rerun()
 
-        # Konsolideringsreol / Stafetpluk modul
         st.write("---")
         st.caption("Konsolideringsreol / Stafetpluk:")
         stafet_label = "Afslut Stafet Pluk (Konsolideringsreol)" if st.session_state.stafet_aktiv else "Start Stafet Pluk (Konsolideringsreol)"
@@ -334,7 +235,6 @@ if st.session_state.rute_aktiv:
 
     st.subheader("Afslutning af rute")
 
-    # Bemærkning / Fejl på ruten
     with st.expander("Tilføj bemærkning / fejl på rute"):
         bemaerkning_input = st.text_input("Beskrivelse af fejl eller afvigelse:", key="bemaerkning_input_field", placeholder="f.eks. manglende vare, beskadiget emballage")
         if st.button("Gem bemærkning"):
@@ -361,7 +261,6 @@ if st.session_state.rute_aktiv:
             gem_stempel("Forsendelsesproces begyndt")
             st.rerun()
 
-    # Fælles tillægstjenester for BÅDE Sørensen og Forsendelse
     if st.session_state.valgt_sorensen or st.session_state.valgt_forsendelse:
         overskrift = "Sørensen (Forsendelse)" if st.session_state.valgt_sorensen else "Forsendelsesproces"
         st.divider()
