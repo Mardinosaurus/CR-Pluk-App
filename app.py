@@ -4,9 +4,8 @@ from datetime import datetime
 import requests
 from zoneinfo import ZoneInfo
 import uuid
-import os
-import shutil
-import streamlit.components.v1 as components
+import cv2
+import numpy as np
 
 st.set_page_config(page_title="Carl Ras - TDABC Plukmåling", layout="centered")
 
@@ -78,142 +77,76 @@ if 'stafet_aktiv' not in st.session_state:
 if 'gemt_stregkode' not in st.session_state:
     st.session_state.gemt_stregkode = "-"
 
-# Opret automatisk scanner component mappe og HTML fil hvis den mangler
-component_dir = os.path.join(os.path.dirname(__file__), 'scanner_component')
-os.makedirs(component_dir, exist_ok=True)
-index_path = os.path.join(component_dir, 'index.html')
-
-html_component_code = """<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <script src="https://cdn.jsdelivr.net/npm/streamlit-component-lib@1.4.0/dist/streamlit-component-lib.js"></script>
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 0; background: transparent; }
-        .scanner-box { border: 1px solid #d0d7de; border-radius: 8px; padding: 12px; background: #ffffff; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-        .input-field { width: 100%; padding: 12px; font-size: 16px; border: 1px solid #bbb; border-radius: 6px; box-sizing: border-box; margin-top: 8px; font-family: inherit; }
-        .cam-btn { background-color: #0066cc; color: white; border: none; padding: 12px 16px; font-size: 15px; border-radius: 6px; cursor: pointer; width: 100%; font-weight: 600; margin-bottom: 4px; transition: background 0.2s; }
-        .cam-btn:hover { background-color: #0052a3; }
-        .cam-btn.active { background-color: #cc0000; }
-        #reader { width: 100%; max-width: 380px; margin: 10px auto; border-radius: 8px; overflow: hidden; display: none; }
-        .status-msg { margin-top: 8px; font-size: 14px; color: #28a745; font-weight: 600; }
-        .label-text { font-size: 14px; font-weight: 600; text-align: left; margin-bottom: 6px; color: #333; display: block; }
-    </style>
-</head>
-<body>
-    <div class="scanner-box">
-        <span class="label-text">Stregkode / Ordrenummer:</span>
-        <button id="cam-btn" class="cam-btn" onclick="toggleCamera()">Start Live Kamerascanner</button>
-        <div id="reader"></div>
-        <input type="text" id="barcode-input" class="input-field" placeholder="Scan med kamerascan, laserscanner eller indtast..." oninput="onManualInput(this.value)" />
-        <div id="status" class="status-msg"></div>
-    </div>
-
-    <script>
-        let html5QrCode = null;
-        let isCameraOn = false;
-
-        function updateHeight() {
-            Streamlit.setFrameHeight(document.body.scrollHeight + 15);
-        }
-
-        function sendToStreamlit(value) {
-            Streamlit.setComponentValue(value);
-            document.getElementById('barcode-input').value = value;
-            document.getElementById('status').innerText = value ? "Aflæst stregkode: " + value : "";
-            updateHeight();
-        }
-
-        function onManualInput(val) {
-            Streamlit.setComponentValue(val.trim());
-            document.getElementById('status').innerText = val.trim() ? "Indtastet kode: " + val.trim() : "";
-            updateHeight();
-        }
-
-        function toggleCamera() {
-            const btn = document.getElementById('cam-btn');
-            const readerDiv = document.getElementById('reader');
-
-            if (!isCameraOn) {
-                readerDiv.style.display = 'block';
-                btn.innerText = 'Stop Kamerascanner';
-                btn.classList.add('active');
-                updateHeight();
-
-                html5QrCode = new Html5Qrcode("reader");
-                const config = { fps: 10, qrbox: { width: 250, height: 150 } };
-
-                html5QrCode.start(
-                    { facingMode: "environment" },
-                    config,
-                    (decodedText, decodedResult) => {
-                        sendToStreamlit(decodedText);
-                        
-                        try {
-                            let ctx = new (window.AudioContext || window.webkitAudioContext)();
-                            let osc = ctx.createOscillator();
-                            osc.type = "sine";
-                            osc.frequency.value = 800;
-                            osc.connect(ctx.destination);
-                            osc.start();
-                            setTimeout(() => osc.stop(), 150);
-                        } catch(e) {}
-
-                        html5QrCode.stop().then(() => {
-                            readerDiv.style.display = 'none';
-                            btn.innerText = 'Start Live Kamerascanner';
-                            btn.classList.remove('active');
-                            isCameraOn = false;
-                            updateHeight();
-                        }).catch(() => {});
-                    },
-                    (errorMessage) => {}
-                ).catch(err => {
-                    alert("Kameratilladelse afvist eller bagkamera ikke fundet: " + err);
-                    readerDiv.style.display = 'none';
-                    btn.innerText = 'Start Live Kamerascanner';
-                    btn.classList.remove('active');
-                    isCameraOn = false;
-                    updateHeight();
-                });
-
-                isCameraOn = true;
-            } else {
-                if (html5QrCode) {
-                    html5QrCode.stop().then(() => {
-                        readerDiv.style.display = 'none';
-                        btn.innerText = 'Start Live Kamerascanner';
-                        btn.classList.remove('active');
-                        isCameraOn = false;
-                        updateHeight();
-                    }).catch(() => {});
-                }
-            }
-        }
-
-        Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, function(event) {
-            updateHeight();
-            if (event.detail && event.detail.args) {
-                const defVal = event.detail.args.default_value;
-                if (!document.getElementById('barcode-input').value && defVal && defVal !== '-') {
-                    document.getElementById('barcode-input').value = defVal;
-                }
-            }
-        });
-        Streamlit.init();
-    </script>
-</body>
-</html>"""
-
-with open(index_path, 'w', encoding='utf-8') as f:
-    f.write(html_component_code)
-
-barcode_scanner_comp = components.declare_component('barcode_scanner_comp', path=component_dir)
-
 # Helper for dansk lokal tid
 def get_dansk_tid():
     return datetime.now(ZoneInfo("Europe/Copenhagen"))
+
+# Stregkodedetektor fra kamerabillede
+def aflaes_stregkode_billede(billede_bytes):
+    try:
+        file_bytes = np.frombuffer(billede_bytes, np.uint8)
+        img_bgr = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        if img_bgr is None:
+            return None
+            
+        if hasattr(cv2, 'barcode'):
+            detector = cv2.barcode.BarcodeDetector()
+            scales = [1.0, 0.5, 1.5, 2.0]
+            for scale in scales:
+                if scale != 1.0:
+                    h, w = img_bgr.shape[:2]
+                    test_img = cv2.resize(img_bgr, (int(w * scale), int(h * scale)))
+                else:
+                    test_img = img_bgr
+                    
+                for sub_img in [test_img, cv2.cvtColor(test_img, cv2.COLOR_BGR2GRAY)]:
+                    try:
+                        res = detector.detectAndDecodeWithType(sub_img)
+                        if res and len(res) > 0 and res[0]:
+                            info = res[0]
+                            if isinstance(info, (list, tuple)):
+                                vals = [str(x).strip() for x in info if x and str(x).strip()]
+                                if vals:
+                                    return vals[0]
+                            elif isinstance(info, str) and info.strip():
+                                return info.strip()
+                    except Exception:
+                        pass
+                        
+                    try:
+                        res_m = detector.detectAndDecodeMulti(sub_img)
+                        if res_m and len(res_m) > 1 and res_m[1]:
+                            for val in res_m[1]:
+                                if val and str(val).strip():
+                                    return str(val).strip()
+                    except Exception:
+                        pass
+
+                try:
+                    rot90 = cv2.rotate(test_img, cv2.ROTATE_90_CLOCKWISE)
+                    res_r = detector.detectAndDecodeWithType(rot90)
+                    if res_r and len(res_r) > 0 and res_r[0]:
+                        info = res_r[0]
+                        if isinstance(info, (list, tuple)):
+                            vals = [str(x).strip() for x in info if x and str(x).strip()]
+                            if vals:
+                                return vals[0]
+                        elif isinstance(info, str) and info.strip():
+                            return info.strip()
+                except Exception:
+                    pass
+
+        try:
+            qr_detector = cv2.QRCodeDetector()
+            val, _, _ = qr_detector.detectAndDecode(img_bgr)
+            if val and val.strip():
+                return val.strip()
+        except Exception:
+            pass
+            
+    except Exception:
+        pass
+    return None
 
 # 1. Stamdata (vises KUN når ruten endnu IKKE er aktiv)
 if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse:
@@ -223,12 +156,28 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
     if initialer:
         st.session_state.saved_initialer = initialer
 
-    # Brug den integrerede scanner-komponent
-    scannet_val = barcode_scanner_comp(default_value=st.session_state.get('gemt_stregkode', '-'), key="live_barcode_scanner")
+    st.write("**Stregkode / Ordrenummer:**")
     
-    if scannet_val is not None and str(scannet_val).strip() != '':
-        st.session_state.gemt_stregkode = str(scannet_val).strip()
-    elif 'gemt_stregkode' not in st.session_state:
+    # Officielt Streamlit Kameramodul med adgangstilladelse
+    kamera_billede = st.camera_input("Kamerascan stregkode", key="kamera_scan_input")
+    if kamera_billede is not None:
+        scannet_kode = aflaes_stregkode_billede(kamera_billede.getvalue())
+        if scannet_kode:
+            st.session_state.gemt_stregkode = scannet_kode
+            st.success(f"Stregkode aflæst: {scannet_kode}")
+        else:
+            st.warning("Ingen stregkode fundet i billedet. Prøv at holde kameraet tæt og skarpt på stregkoden, eller indtast nummeret i feltet nedenfor.")
+
+    stregkode_input = st.text_input(
+        "Indtast eller scan med laserscanner:",
+        value=st.session_state.get('gemt_stregkode', '') if st.session_state.get('gemt_stregkode', '') != '-' else '',
+        key="stregkode_text_input",
+        placeholder="Scan eller indtast stregkode/ordrenummer..."
+    ).strip()
+    
+    if stregkode_input:
+        st.session_state.gemt_stregkode = stregkode_input
+    else:
         st.session_state.gemt_stregkode = "-"
 
     hoved_pluktype = st.selectbox(
