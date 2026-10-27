@@ -4,6 +4,8 @@ from datetime import datetime
 import requests
 from zoneinfo import ZoneInfo
 import uuid
+import cv2
+import numpy as np
 
 st.set_page_config(page_title="Carl Ras - TDABC Plukmåling", layout="centered")
 
@@ -43,12 +45,6 @@ st.markdown(hide_st_style, unsafe_allow_html=True)
 st.title("Carl Ras - Plukmåling (TDABC)")
 st.caption("Registrer tidsstempler for plukruter på lageret.")
 
-# Check for stregkode in query params
-if "stregkode" in st.query_params:
-    q_code = st.query_params["stregkode"]
-    if q_code and q_code.strip():
-        st.session_state.gemt_stregkode = q_code.strip()
-
 # Session state initialization
 if 'malinger' not in st.session_state:
     st.session_state.malinger = []
@@ -80,10 +76,64 @@ if 'stafet_aktiv' not in st.session_state:
     st.session_state.stafet_aktiv = False
 if 'gemt_stregkode' not in st.session_state:
     st.session_state.gemt_stregkode = "-"
+if 'stregkode_text_input' not in st.session_state:
+    st.session_state.stregkode_text_input = ""
 
 # Helper for dansk lokal tid
 def get_dansk_tid():
     return datetime.now(ZoneInfo("Europe/Copenhagen"))
+
+# Stregkodedetektor
+def aflaes_stregkode_billede(billede_bytes):
+    if not billede_bytes:
+        return None
+    try:
+        file_bytes = np.frombuffer(billede_bytes, np.uint8)
+        img_bgr = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        if img_bgr is None:
+            return None
+            
+        detector = cv2.barcode.BarcodeDetector()
+        scales = [1.0, 0.5, 1.5, 2.0]
+        
+        for scale in scales:
+            if scale != 1.0:
+                h, w = img_bgr.shape[:2]
+                resized = cv2.resize(img_bgr, (int(w * scale), int(h * scale)))
+            else:
+                resized = img_bgr
+                
+            for test_img in [resized, cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)]:
+                try:
+                    info, _, _ = detector.detectAndDecode(test_img)
+                    if info and str(info).strip():
+                        return str(info).strip()
+                except Exception:
+                    pass
+                    
+                try:
+                    retval, decoded_info, decoded_type, _ = detector.detectAndDecodeWithType(test_img)
+                    if retval and decoded_info:
+                        if isinstance(decoded_info, (list, tuple)):
+                            vals = [str(x).strip() for x in decoded_info if x and str(x).strip()]
+                            if vals:
+                                return vals[0]
+                        elif isinstance(decoded_info, str) and decoded_info.strip():
+                            return decoded_info.strip()
+                except Exception:
+                    pass
+
+        try:
+            qr_detector = cv2.QRCodeDetector()
+            val, _, _ = qr_detector.detectAndDecode(img_bgr)
+            if val and val.strip():
+                return val.strip()
+        except Exception:
+            pass
+            
+    except Exception:
+        pass
+    return None
 
 # 1. Stamdata (vises KUN når ruten endnu IKKE er aktiv)
 if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse:
@@ -95,90 +145,29 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
 
     st.write("**Stregkode / Ordrenummer:**")
     
-    # HTML5 Live Barcode Scanner Component
-    with st.expander("Åbn live kamerascan"):
-        scanner_html = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-            <style>
-                #reader {
-                    width: 100%;
-                    max-width: 380px;
-                    margin: 0 auto;
-                    border-radius: 8px;
-                    overflow: hidden;
-                }
-                #status {
-                    font-family: sans-serif;
-                    text-align: center;
-                    font-size: 14px;
-                    margin-top: 8px;
-                    color: #333;
-                }
-            </style>
-        </head>
-        <body>
-            <div id="reader"></div>
-            <div id="status">Placer stregkoden foran kameraet...</div>
-            <script>
-                let html5QrCode = new Html5Qrcode("reader");
-                let scanned = false;
-
-                function onScanSuccess(decodedText, decodedResult) {
-                    if (scanned) return;
-                    scanned = true;
-                    document.getElementById("status").innerHTML = "<b style='color:green;'>Aflæst: " + decodedText + "</b>";
-                    
-                    try {
-                        html5QrCode.stop();
-                    } catch(e) {}
-
-                    // Update parent URL query parameter to pass decoded barcode back to Streamlit
-                    setTimeout(() => {
-                        try {
-                            const topUrl = new URL(window.top.location.href);
-                            topUrl.searchParams.set('stregkode', decodedText);
-                            window.top.location.href = topUrl.href;
-                        } catch (e) {
-                            window.parent.location.search = '?stregkode=' + encodeURIComponent(decodedText);
-                        }
-                    }, 300);
-                }
-
-                // Force facingMode: "environment" to ensure rear camera on phones/tablets
-                const config = { fps: 10, qrbox: { width: 280, height: 160 } };
-                
-                html5QrCode.start(
-                    { facingMode: "environment" },
-                    config,
-                    onScanSuccess
-                ).catch(err => {
-                    // Fallback if environment strict mode fails
-                    html5QrCode.start(
-                        { facingMode: "user" },
-                        config,
-                        onScanSuccess
-                    ).catch(e => {
-                        document.getElementById("status").innerText = "Kameraadgang nægtet eller ikke tilgængelig.";
-                    });
-                });
-            </script>
-        </body>
-        </html>
-        """
-        st.components.v1.html(scanner_html, height=360)
+    # Kamerascanner vises direkte uden expander for at undgå sort/blank skærm på iOS/Safari
+    vis_kamera = st.checkbox("Åbn kamerascanner (viser kamerasøger på skærmen)", value=False)
+    if vis_kamera:
+        kamera_billede = st.camera_input("Kamerascan (hold stregkoden foran kameraet og tryk)", key="kamera_scan_widget")
+        if kamera_billede is not None:
+            scannet_kode = aflaes_stregkode_billede(kamera_billede.getvalue())
+            if scannet_kode:
+                st.session_state.gemt_stregkode = scannet_kode
+                st.session_state.stregkode_text_input = scannet_kode
+                st.success(f"Stregkode aflæst og indsat: {scannet_kode}")
+            else:
+                st.warning("Ingen stregkode fundet i billedet. Prøv at holde kameraet tæt og skarpt på stregkoden, eller indtast nummeret manuelt i feltet nedenfor.")
 
     stregkode_input = st.text_input(
         "Indtast eller scan med laserscanner:",
-        value=st.session_state.get('gemt_stregkode', '') if st.session_state.get('gemt_stregkode', '') != '-' else '',
         key="stregkode_text_input",
         placeholder="Scan eller indtast stregkode/ordrenummer..."
     ).strip()
     
     if stregkode_input:
         st.session_state.gemt_stregkode = stregkode_input
+    elif not st.session_state.get('gemt_stregkode'):
+        st.session_state.gemt_stregkode = "-"
 
     hoved_pluktype = st.selectbox(
         "Vælg pluktype *",
