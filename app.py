@@ -8,7 +8,7 @@ import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Carl Ras - TDABC Plukmåling", layout="centered")
 
-# Skjul ALT Streamlit-relateret UI
+# Skjul Streamlit UI elementer
 hide_st_style = """
     <style>
     #MainMenu {visibility: hidden !important; display: none !important;}
@@ -73,32 +73,23 @@ if 'palle_type' not in st.session_state:
     st.session_state.palle_type = "Helpalle pluk"
 if 'stafet_aktiv' not in st.session_state:
     st.session_state.stafet_aktiv = False
+if 'gemt_stregkode' not in st.session_state:
+    st.session_state.gemt_stregkode = "-"
+
+# Tjek om der er scannet en stregkode via query params fra live video scanneren
+query_params = st.query_params
+if "scanned" in query_params:
+    scanned_val = query_params["scanned"]
+    if scanned_val:
+        st.session_state.gemt_stregkode = str(scanned_val)
+    # Ryd query param så den ikke hænger ved
+    del st.query_params["scanned"]
 
 # Helper for dansk lokal tid
 def get_dansk_tid():
     return datetime.now(ZoneInfo("Europe/Copenhagen"))
 
-# Funktion til at gemme tidsstempler
-def gem_stempel(handling, ekstra_info=""):
-    nu = get_dansk_tid()
-    init = st.session_state.get('saved_initialer', 'Ukendt')
-    pluk_t = st.session_state.get('endelig_pluktype', 'Standard')
-    stregk = st.session_state.get('gemt_stregkode', '-')
-    
-    info_tekst = f"Rute-ID: {st.session_state.rute_id} | Stregkode: {stregk}"
-    if ekstra_info:
-        info_tekst += f" | {ekstra_info}"
-        
-    st.session_state.malinger.append({
-        'Dato': nu.strftime('%Y-%m-%d'),
-        'Tidspunkt': nu.strftime('%H:%M:%S'),
-        'Initialer': init,
-        'Pluktype': pluk_t,
-        'Handling': handling,
-        'Ekstra_Info': info_tekst
-    })
-
-# 1. Stamdata (vises KUN når ruten endnu IKKE er aktiv og IKKE klar til indsendelse)
+# 1. Stamdata (vises KUN når ruten endnu IKKE er aktiv)
 if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse:
     st.subheader("1. Før du starter ruten")
 
@@ -106,59 +97,50 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
     if initialer:
         st.session_state.saved_initialer = initialer
 
-    st.write("**📷 Stregkodescanner Widget:**")
+    st.write("**Stregkode / Ordrenummer:**")
     
-    # HTML5 Barcode scanner widget
-    html_scanner = """
-    <div style="border: 2px dashed #ff4b4b; padding: 12px; border-radius: 10px; background-color: #fafafa; text-align: center; margin-bottom: 10px;">
-        <div style="font-size: 14px; font-weight: bold; color: #333; margin-bottom: 6px;">
-            📷 Kamerascan (Scan stregkode med mobilkamera)
-        </div>
-        <div id="reader" style="width: 100%; max-width: 350px; margin: 0 auto; display: none;"></div>
-        <button id="scan-btn" onclick="startScanner()" style="background-color: #ff4b4b; color: white; border: none; padding: 8px 16px; font-size: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; width: 100%;">
-            🔍 Åbn Kamerascan
-        </button>
-        <div id="scanned-result" style="margin-top: 8px; font-size: 14px; font-weight: bold; color: #2e7d32;"></div>
-    </div>
-
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-    <script>
-    let html5QrcodeScanner = null;
-    function startScanner() {
-        document.getElementById('reader').style.display = 'block';
-        document.getElementById('scan-btn').style.display = 'none';
-        html5QrcodeScanner = new Html5Qrcode("reader");
-        const config = { fps: 10, qrbox: { width: 250, height: 150 } };
-        html5QrcodeScanner.start(
-            { facingMode: "environment" },
-            config,
-            (decodedText, decodedResult) => {
-                document.getElementById('scanned-result').innerText = "✅ Scannet: " + decodedText;
-                html5QrcodeScanner.stop().then(() => {
-                    document.getElementById('reader').style.display = 'none';
-                    document.getElementById('scan-btn').innerText = "✅ Scannet: " + decodedText + " (Scan igen)";
-                    document.getElementById('scan-btn').style.display = 'block';
-                });
-                if (navigator.clipboard) {
-                    navigator.clipboard.writeText(decodedText);
+    with st.expander("Åbn live kamerascan (Scanner automatisk i video)"):
+        scanner_html = """
+        <script src="https://unpkg.com/html5-qrcode"></script>
+        <div id="reader" style="width: 100%; max-width: 400px; margin: 0 auto;"></div>
+        <div id="result" style="text-align: center; margin-top: 10px; font-weight: bold; color: green;"></div>
+        <script>
+            function onScanSuccess(decodedText, decodedResult) {
+                document.getElementById('result').innerText = "Scannet: " + decodedText;
+                try {
+                    const parentUrl = new URL(window.parent.location.href);
+                    parentUrl.searchParams.set("scanned", decodedText);
+                    window.parent.location.href = parentUrl.href;
+                } catch(e) {
+                    console.log("Could not update parent location", e);
                 }
-            },
-            (errorMessage) => {}
-        ).catch(err => {
-            alert("Kamerafejl: " + err);
-            document.getElementById('reader').style.display = 'none';
-            document.getElementById('scan-btn').style.display = 'block';
-        });
-    }
-    </script>
-    """
-    components.html(html_scanner, height=130)
+            }
+            
+            let html5QrcodeScanner = new Html5QrcodeScanner(
+                "reader",
+                { 
+                    fps: 10, 
+                    qrbox: {width: 250, height: 150},
+                    experimentalFeatures: {
+                        useBarCodeDetectorIfSupported: true
+                    }
+                },
+                /* verbose= */ false
+            );
+            html5QrcodeScanner.render(onScanSuccess);
+        </script>
+        """
+        components.html(scanner_html, height=360)
 
-    stregkode = st.text_input("Indtast eller scan med laserscanner (valgfri):", key="stregkode_input", placeholder="Scan eller indtast her...").strip()
-    if stregkode:
-        st.session_state.gemt_stregkode = stregkode
-    else:
-        st.session_state.gemt_stregkode = "-"
+    stregkode_input = st.text_input(
+        "Indtast eller scan med laserscanner:",
+        value=st.session_state.get('gemt_stregkode', '') if st.session_state.get('gemt_stregkode', '') != '-' else '',
+        key="stregkode_text_input",
+        placeholder="Scan eller indtast stregkode/ordrenummer..."
+    ).strip()
+    
+    if stregkode_input:
+        st.session_state.gemt_stregkode = stregkode_input
 
     hoved_pluktype = st.selectbox(
         "Vælg pluktype *",
@@ -204,10 +186,33 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
             })
             st.rerun()
 
-# 2. Registrering af faser (Vis kun hvis ruten er aktiv og IKKE klar til indsendelse)
-if st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse:
-    st.subheader("2. Registrer faser på ruten")
+elif st.session_state.klar_til_indsendelse:
+    st.info("Ruten er afsluttet! Rul ned til '3. Indsend data' for at gemme målingen.")
 
+# Funktion til at gemme tidsstempler
+def gem_stempel(handling, ekstra_info=""):
+    nu = get_dansk_tid()
+    init = st.session_state.get('saved_initialer', 'Ukendt')
+    pluk_t = st.session_state.get('endelig_pluktype', 'Standard')
+    stregk = st.session_state.get('gemt_stregkode', '-')
+    
+    info_tekst = f"Rute-ID: {st.session_state.rute_id} | Stregkode: {stregk}"
+    if ekstra_info:
+        info_tekst += f" | {ekstra_info}"
+        
+    st.session_state.malinger.append({
+        'Dato': nu.strftime('%Y-%m-%d'),
+        'Tidspunkt': nu.strftime('%H:%M:%S'),
+        'Initialer': init,
+        'Pluktype': pluk_t,
+        'Handling': handling,
+        'Ekstra_Info': info_tekst
+    })
+
+# 2. Registrering af faser (Vis kun hvis ruten er aktiv)
+if st.session_state.rute_aktiv:
+    st.subheader("2. Registrer faser på ruten")
+    
     hoved_p = st.session_state.get('valgt_hoved_pluktype', '')
 
     # Special-håndtering for Pallepluk (valg af type EFTER rute-start)
@@ -245,7 +250,7 @@ if st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse:
     if not st.session_state.valgt_sorensen and not st.session_state.valgt_forsendelse:
         
         # Instruks for Stafetpluk
-        st.info("ℹ️ **Husk Stafet Pluk Regel:** Tryk først på 'Ankommet til lokation', når du fysisk står ved plukpladsen!")
+        st.info("Husk Stafet Pluk Regel: Tryk først på 'Ankommet til lokation', når du fysisk står ved plukpladsen!")
 
         trin = st.session_state.pluk_trin
         st.write(f"**Aktuel plukplads: Nr. {trin} (af maks 100)**")
@@ -282,7 +287,7 @@ if st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse:
     st.subheader("Afslutning af rute")
 
     # Bemærkning / Fejl på ruten
-    with st.expander("⚠️ Tilføj bemærkning / fejl på rute (valgfri)"):
+    with st.expander("Tilføj bemærkning / fejl på rute"):
         bemaerkning_input = st.text_input("Beskrivelse af fejl eller afvigelse:", key="bemaerkning_input_field", placeholder="f.eks. manglende vare, beskadiget emballage")
         if st.button("Gem bemærkning"):
             if bemaerkning_input.strip():
@@ -346,8 +351,10 @@ if st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse:
         st.session_state.valgt_forsendelse = False
         st.rerun()
 
-# 3. Indsend data (Vises KUN når klar til indsendelse)
-if st.session_state.klar_til_indsendelse and st.session_state.malinger:
+st.divider()
+
+# 3. Indsend data
+if st.session_state.malinger:
     st.subheader("3. Indsend data")
     if not st.session_state.bekraeft_send:
         if st.button("Send data", type="primary", use_container_width=True):
@@ -407,5 +414,5 @@ if st.session_state.klar_til_indsendelse and st.session_state.malinger:
             if st.button("Nej", use_container_width=True):
                 st.session_state.bekraeft_send = False
                 st.rerun()
-elif not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse:
+else:
     st.info("Ingen aktive registreringer endnu. Indtast initialer og tryk 'Start plukrute'.")
