@@ -1,3 +1,7 @@
 streamlit
 pandas
 st-gsheets-connection
+requests
+opencv-python-headless
+numpy
+Pillow
