@@ -7,7 +7,7 @@ import uuid
 
 st.set_page_config(page_title="Carl Ras - TDABC Plukmåling", layout="centered")
 
-# Skjul Streamlit UI elementer
+# CSS to force 3 columns on mobile and hide Streamlit UI elements
 hide_st_style = """
     <style>
     #MainMenu {visibility: hidden !important; display: none !important;}
@@ -37,11 +37,25 @@ hide_st_style = """
         padding-bottom: 2rem !important;
     }
 
-    /* Gør knapper store og lette at ramme på touch-skærme */
-    div[data-testid="stColumn"] button {
-        min-height: 52px !important;
-        font-size: 20px !important;
-        font-weight: 600 !important;
+    /* TVING 3 KOLONNER PÅ MOBIL / TELEFON (INGEN VERTIKAL STACKING) */
+    div[data-testid="stHorizontalBlock"] {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        gap: 8px !important;
+        width: 100% !important;
+    }
+    div[data-testid="column"], div[data-testid="stColumn"] {
+        width: 32% !important;
+        flex: 1 1 32% !important;
+        min-width: 0 !important;
+    }
+    div[data-testid="column"] button, div[data-testid="stColumn"] button {
+        width: 100% !important;
+        min-height: 58px !important;
+        font-size: 22px !important;
+        font-weight: bold !important;
+        border-radius: 8px !important;
     }
     </style>
 """
@@ -86,9 +100,23 @@ if 'gemt_stregkode' not in st.session_state:
 if 'stamdata_trin' not in st.session_state:
     st.session_state.stamdata_trin = 1
 
-# Helper for dansk lokal tid
 def get_dansk_tid():
     return datetime.now(ZoneInfo("Europe/Copenhagen"))
+
+# Callbacks to manage numpad state cleanly without keyboard popup
+def add_digit(digit):
+    st.session_state.ordrenr_val += str(digit)
+
+def delete_digit():
+    if len(st.session_state.ordrenr_val) > 0:
+        st.session_state.ordrenr_val = st.session_state.ordrenr_val[:-1]
+
+def confirm_ordrenr():
+    if st.session_state.ordrenr_val.strip():
+        st.session_state.gemt_stregkode = st.session_state.ordrenr_val.strip()
+    else:
+        st.session_state.gemt_stregkode = "-"
+    st.session_state.stamdata_trin = 3
 
 # 1. Stamdata (vises KUN når ruten endnu IKKE er aktiv)
 if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse:
@@ -116,85 +144,71 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
         st.subheader("1. Indtast ordrenummer")
         st.caption(f"Initialer: {st.session_state.get('saved_initialer', '')}")
 
-        ordrenr_input = st.text_input(
-            "Indtast eller scan ordrenummer:",
-            value=st.session_state.ordrenr_val,
-            key="ordrenr_text_field",
-            placeholder="f.eks. 030684132"
-        ).strip()
+        # Viste display-boks (forhindrer at mobil-tastaturet popper op)
+        visnings_tekst = st.session_state.ordrenr_val if st.session_state.ordrenr_val else "Indtast ordrenummer..."
+        tekst_farve = "#111111" if st.session_state.ordrenr_val else "#888888"
         
-        if ordrenr_input != st.session_state.ordrenr_val:
-            st.session_state.ordrenr_val = ordrenr_input
+        display_html = f"""
+        <div style="
+            background-color: #f8f9fa;
+            border: 2px solid #0066cc;
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 26px;
+            font-weight: bold;
+            text-align: center;
+            letter-spacing: 2px;
+            color: {tekst_farve};
+            margin-bottom: 12px;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+        ">
+            {visnings_tekst}
+        </div>
+        """
+        st.markdown(display_html, unsafe_allow_html=True)
         
-        st.caption("Skærm-tastatur (Touch Numpad 3x3):")
-        
+        # Touch Numpad Matrix (3x3 + 0 + X + Enter)
         col1, col2, col3 = st.columns(3)
         with col1:
-            if st.button("1", use_container_width=True, key="btn_1"):
-                st.session_state.ordrenr_val += "1"
-                st.rerun()
+            st.button("1", use_container_width=True, key="btn_1", on_click=add_digit, args=(1,))
         with col2:
-            if st.button("2", use_container_width=True, key="btn_2"):
-                st.session_state.ordrenr_val += "2"
-                st.rerun()
+            st.button("2", use_container_width=True, key="btn_2", on_click=add_digit, args=(2,))
         with col3:
-            if st.button("3", use_container_width=True, key="btn_3"):
-                st.session_state.ordrenr_val += "3"
-                st.rerun()
+            st.button("3", use_container_width=True, key="btn_3", on_click=add_digit, args=(3,))
 
         col4, col5, col6 = st.columns(3)
         with col4:
-            if st.button("4", use_container_width=True, key="btn_4"):
-                st.session_state.ordrenr_val += "4"
-                st.rerun()
+            st.button("4", use_container_width=True, key="btn_4", on_click=add_digit, args=(4,))
         with col5:
-            if st.button("5", use_container_width=True, key="btn_5"):
-                st.session_state.ordrenr_val += "5"
-                st.rerun()
+            st.button("5", use_container_width=True, key="btn_5", on_click=add_digit, args=(5,))
         with col6:
-            if st.button("6", use_container_width=True, key="btn_6"):
-                st.session_state.ordrenr_val += "6"
-                st.rerun()
+            st.button("6", use_container_width=True, key="btn_6", on_click=add_digit, args=(6,))
 
         col7, col8, col9 = st.columns(3)
         with col7:
-            if st.button("7", use_container_width=True, key="btn_7"):
-                st.session_state.ordrenr_val += "7"
-                st.rerun()
+            st.button("7", use_container_width=True, key="btn_7", on_click=add_digit, args=(7,))
         with col8:
-            if st.button("8", use_container_width=True, key="btn_8"):
-                st.session_state.ordrenr_val += "8"
-                st.rerun()
+            st.button("8", use_container_width=True, key="btn_8", on_click=add_digit, args=(8,))
         with col9:
-            if st.button("9", use_container_width=True, key="btn_9"):
-                st.session_state.ordrenr_val += "9"
-                st.rerun()
+            st.button("9", use_container_width=True, key="btn_9", on_click=add_digit, args=(9,))
 
         col0, col_del, col_ok = st.columns(3)
         with col0:
-            if st.button("0", use_container_width=True, key="btn_0"):
-                st.session_state.ordrenr_val += "0"
-                st.rerun()
+            st.button("0", use_container_width=True, key="btn_0", on_click=add_digit, args=(0,))
         with col_del:
-            if st.button("X (Slet)", use_container_width=True, key="btn_del"):
-                if len(st.session_state.ordrenr_val) > 0:
-                    st.session_state.ordrenr_val = st.session_state.ordrenr_val[:-1]
-                st.rerun()
+            st.button("X (Slet)", use_container_width=True, key="btn_del", on_click=delete_digit)
         with col_ok:
-            if st.button("Enter / OK", type="primary", use_container_width=True, key="btn_ok"):
-                st.session_state.gemt_stregkode = st.session_state.ordrenr_val if st.session_state.ordrenr_val else "-"
-                st.session_state.stamdata_trin = 3
-                st.rerun()
+            st.button("Enter / OK", type="primary", use_container_width=True, key="btn_ok", on_click=confirm_ordrenr)
 
-        st.write("---")
-        if st.button("<- Tilbage til Initialer", key="btn_back_to_1"):
-            st.session_state.stamdata_trin = 1
-            st.rerun()
+        with st.expander("Indtast med laserscanner / pc-tastatur"):
+            man_input = st.text_input("Ordrenummer manuelt:", value=st.session_state.ordrenr_val, key="man_input_field")
+            if man_input != st.session_state.ordrenr_val:
+                st.session_state.ordrenr_val = man_input
 
-    # Trin 3: Pluktype & Start Plukrute
+    # Trin 3: Pluktype og Start Plukrute
     elif st.session_state.stamdata_trin == 3:
         st.subheader("1. Vælg pluktype")
-        st.info(f"Initialer: **{st.session_state.get('saved_initialer', '')}** | Ordrenr: **{st.session_state.get('gemt_stregkode', '-')}**")
+        st.info(f"**Initialer:** {st.session_state.get('saved_initialer', '')} | **Ordrenr:** {st.session_state.get('gemt_stregkode', '-')}")
 
         hoved_pluktype = st.selectbox(
             "Vælg pluktype *",
@@ -210,42 +224,30 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
 
         st.divider()
 
-        col_start, col_reset = st.columns([2, 1])
-        with col_start:
-            if st.button("Start plukrute", type="primary", use_container_width=True):
-                st.session_state.rute_id = f"R-{get_dansk_tid().strftime('%H%M%S')}-{uuid.uuid4().hex[:3].upper()}"
-                st.session_state.rute_aktiv = True
-                st.session_state.klar_til_indsendelse = False
-                st.session_state.pluk_trin = 1
-                st.session_state.transport_trykket = False
-                st.session_state.emballage_trykket = False
-                st.session_state.valgt_sorensen = False
-                st.session_state.valgt_forsendelse = False
-                st.session_state.bekraeft_send = False
-                st.session_state.berta_valgt = "Nej"
-                st.session_state.berta_transport_trykket = False
-                st.session_state.stafet_aktiv = False
-                
-                # Reset trin til næste gang
-                st.session_state.stamdata_trin = 1
-                st.session_state.ordrenr_val = ""
+        if st.button("Start plukrute", type="primary", use_container_width=True):
+            st.session_state.rute_id = f"R-{get_dansk_tid().strftime('%H%M%S')}-{uuid.uuid4().hex[:3].upper()}"
+            st.session_state.rute_aktiv = True
+            st.session_state.klar_til_indsendelse = False
+            st.session_state.pluk_trin = 1
+            st.session_state.transport_trykket = False
+            st.session_state.emballage_trykket = False
+            st.session_state.valgt_sorensen = False
+            st.session_state.valgt_forsendelse = False
+            st.session_state.bekraeft_send = False
+            st.session_state.berta_valgt = "Nej"
+            st.session_state.berta_transport_trykket = False
+            st.session_state.stafet_aktiv = False
 
-                nu = get_dansk_tid()
-                st.session_state.malinger.append({
-                    'Dato': nu.strftime('%Y-%m-%d'),
-                    'Tidspunkt': nu.strftime('%H:%M:%S'),
-                    'Initialer': st.session_state.get('saved_initialer', ''),
-                    'Pluktype': st.session_state.endelig_pluktype,
-                    'Handling': "Start plukrute",
-                    'Ekstra_Info': f"Rute-ID: {st.session_state.rute_id} | Stregkode: {st.session_state.get('gemt_stregkode', '-')}"
-                })
-                st.rerun()
-
-        with col_reset:
-            if st.button("Start forfra", use_container_width=True):
-                st.session_state.stamdata_trin = 1
-                st.session_state.ordrenr_val = ""
-                st.rerun()
+            nu = get_dansk_tid()
+            st.session_state.malinger.append({
+                'Dato': nu.strftime('%Y-%m-%d'),
+                'Tidspunkt': nu.strftime('%H:%M:%S'),
+                'Initialer': st.session_state.get('saved_initialer', 'Ukendt'),
+                'Pluktype': st.session_state.endelig_pluktype,
+                'Handling': "Start plukrute",
+                'Ekstra_Info': f"Rute-ID: {st.session_state.rute_id} | Stregkode: {st.session_state.get('gemt_stregkode', '-')}"
+            })
+            st.rerun()
 
 elif st.session_state.klar_til_indsendelse:
     st.info("Ruten er afsluttet! Rul ned til '3. Indsend data' for at gemme målingen.")
@@ -401,6 +403,8 @@ if st.session_state.rute_aktiv:
         st.session_state.klar_til_indsendelse = True
         st.session_state.valgt_sorensen = False
         st.session_state.valgt_forsendelse = False
+        st.session_state.stamdata_trin = 1
+        st.session_state.ordrenr_val = ""
         st.rerun()
 
 st.divider()
