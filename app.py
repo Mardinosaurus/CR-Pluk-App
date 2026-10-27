@@ -4,7 +4,6 @@ from datetime import datetime
 import requests
 from zoneinfo import ZoneInfo
 import uuid
-import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Carl Ras - TDABC Plukmåling", layout="centered")
 
@@ -44,6 +43,12 @@ st.markdown(hide_st_style, unsafe_allow_html=True)
 st.title("Carl Ras - Plukmåling (TDABC)")
 st.caption("Registrer tidsstempler for plukruter på lageret.")
 
+# Check for stregkode in query params
+if "stregkode" in st.query_params:
+    q_code = st.query_params["stregkode"]
+    if q_code and q_code.strip():
+        st.session_state.gemt_stregkode = q_code.strip()
+
 # Session state initialization
 if 'malinger' not in st.session_state:
     st.session_state.malinger = []
@@ -76,15 +81,6 @@ if 'stafet_aktiv' not in st.session_state:
 if 'gemt_stregkode' not in st.session_state:
     st.session_state.gemt_stregkode = "-"
 
-# Tjek om der er scannet en stregkode via query params fra live video scanneren
-query_params = st.query_params
-if "scanned" in query_params:
-    scanned_val = query_params["scanned"]
-    if scanned_val:
-        st.session_state.gemt_stregkode = str(scanned_val)
-    # Ryd query param så den ikke hænger ved
-    del st.query_params["scanned"]
-
 # Helper for dansk lokal tid
 def get_dansk_tid():
     return datetime.now(ZoneInfo("Europe/Copenhagen"))
@@ -99,38 +95,80 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
 
     st.write("**Stregkode / Ordrenummer:**")
     
-    with st.expander("Åbn live kamerascan (Scanner automatisk i video)"):
+    # HTML5 Live Barcode Scanner Component
+    with st.expander("Åbn live kamerascan"):
         scanner_html = """
-        <script src="https://unpkg.com/html5-qrcode"></script>
-        <div id="reader" style="width: 100%; max-width: 400px; margin: 0 auto;"></div>
-        <div id="result" style="text-align: center; margin-top: 10px; font-weight: bold; color: green;"></div>
-        <script>
-            function onScanSuccess(decodedText, decodedResult) {
-                document.getElementById('result').innerText = "Scannet: " + decodedText;
-                try {
-                    const parentUrl = new URL(window.parent.location.href);
-                    parentUrl.searchParams.set("scanned", decodedText);
-                    window.parent.location.href = parentUrl.href;
-                } catch(e) {
-                    console.log("Could not update parent location", e);
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+            <style>
+                #reader {
+                    width: 100%;
+                    max-width: 380px;
+                    margin: 0 auto;
+                    border-radius: 8px;
+                    overflow: hidden;
                 }
-            }
-            
-            let html5QrcodeScanner = new Html5QrcodeScanner(
-                "reader",
-                { 
-                    fps: 10, 
-                    qrbox: {width: 250, height: 150},
-                    experimentalFeatures: {
-                        useBarCodeDetectorIfSupported: true
-                    }
-                },
-                /* verbose= */ false
-            );
-            html5QrcodeScanner.render(onScanSuccess);
-        </script>
+                #status {
+                    font-family: sans-serif;
+                    text-align: center;
+                    font-size: 14px;
+                    margin-top: 8px;
+                    color: #333;
+                }
+            </style>
+        </head>
+        <body>
+            <div id="reader"></div>
+            <div id="status">Placer stregkoden foran kameraet...</div>
+            <script>
+                let html5QrCode = new Html5Qrcode("reader");
+                let scanned = false;
+
+                function onScanSuccess(decodedText, decodedResult) {
+                    if (scanned) return;
+                    scanned = true;
+                    document.getElementById("status").innerHTML = "<b style='color:green;'>Aflæst: " + decodedText + "</b>";
+                    
+                    try {
+                        html5QrCode.stop();
+                    } catch(e) {}
+
+                    // Update parent URL query parameter to pass decoded barcode back to Streamlit
+                    setTimeout(() => {
+                        try {
+                            const topUrl = new URL(window.top.location.href);
+                            topUrl.searchParams.set('stregkode', decodedText);
+                            window.top.location.href = topUrl.href;
+                        } catch (e) {
+                            window.parent.location.search = '?stregkode=' + encodeURIComponent(decodedText);
+                        }
+                    }, 300);
+                }
+
+                // Force facingMode: "environment" to ensure rear camera on phones/tablets
+                const config = { fps: 10, qrbox: { width: 280, height: 160 } };
+                
+                html5QrCode.start(
+                    { facingMode: "environment" },
+                    config,
+                    onScanSuccess
+                ).catch(err => {
+                    // Fallback if environment strict mode fails
+                    html5QrCode.start(
+                        { facingMode: "user" },
+                        config,
+                        onScanSuccess
+                    ).catch(e => {
+                        document.getElementById("status").innerText = "Kameraadgang nægtet eller ikke tilgængelig.";
+                    });
+                });
+            </script>
+        </body>
+        </html>
         """
-        components.html(scanner_html, height=360)
+        st.components.v1.html(scanner_html, height=360)
 
     stregkode_input = st.text_input(
         "Indtast eller scan med laserscanner:",
