@@ -62,6 +62,8 @@ if 'transport_trykket' not in st.session_state:
     st.session_state.transport_trykket = False
 if 'emballage_trykket' not in st.session_state:
     st.session_state.emballage_trykket = False
+if 'berta_transport_trykket' not in st.session_state:
+    st.session_state.berta_transport_trykket = False
 
 # 1. Stamdata
 st.subheader("1. Før du starter ruten")
@@ -116,6 +118,7 @@ if not st.session_state.rute_aktiv:
         st.session_state.pluk_trin = 1
         st.session_state.transport_trykket = False
         st.session_state.emballage_trykket = False
+        st.session_state.berta_transport_trykket = False
         st.session_state.valgt_sorensen = False
         st.session_state.valgt_forsendelse = False
         st.session_state.bekraeft_send = False
@@ -124,11 +127,23 @@ if not st.session_state.rute_aktiv:
 else:
     st.info(f"Aktiv rute: {initialer} | {endelig_pluktype}")
 
-    emb_type = "primary" if st.session_state.emballage_trykket else "secondary"
-    if st.button("Afslut emballage pålægning", type=emb_type, use_container_width=True):
-        st.session_state.emballage_trykket = True
-        gem_stempel("Afslut emballage pålægning")
-        st.rerun()
+    # Hvis Buffer pluk: erstat emballagepålægning med "Brug af Berta"
+    if hoved_pluktype == "Buffer pluk":
+        st.write("**Brug af Berta:**")
+        brug_berta = st.radio("Brug af Berta", ["Nej", "Ja"], horizontal=True, index=0, key="berta_radio_choice")
+        
+        if brug_berta == "Ja":
+            berta_type = "primary" if st.session_state.berta_transport_trykket else "secondary"
+            if st.button("Transport til Berta", type=berta_type, use_container_width=True):
+                st.session_state.berta_transport_trykket = True
+                gem_stempel("Transport til Berta")
+                st.rerun()
+    else:
+        emb_type = "primary" if st.session_state.emballage_trykket else "secondary"
+        if st.button("Afslut emballage pålægning", type=emb_type, use_container_width=True):
+            st.session_state.emballage_trykket = True
+            gem_stempel("Afslut emballage pålægning")
+            st.rerun()
 
     st.divider()
 
@@ -170,7 +185,6 @@ else:
     with col_f1:
         sor_type = "primary" if st.session_state.valgt_sorensen else "secondary"
         if st.button("Afsat til Sørensen", type=sor_type, use_container_width=True):
-            # Skift til Sørensen: deaktiver forsendelsesknap og aktiver Sørensen
             st.session_state.valgt_sorensen = True
             st.session_state.valgt_forsendelse = False
             gem_stempel("Afsat til Sørensen")
@@ -179,15 +193,16 @@ else:
     with col_f2:
         for_type = "primary" if st.session_state.valgt_forsendelse else "secondary"
         if st.button("Forsendelsesproces begyndt", type=for_type, use_container_width=True):
-            # Skift til Forsendelse: deaktiver Sørensen (så undermenu og rød farve fjernes!)
             st.session_state.valgt_sorensen = False
             st.session_state.valgt_forsendelse = True
             gem_stempel("Forsendelsesproces begyndt")
             st.rerun()
 
-    if st.session_state.valgt_sorensen:
+    # Hvis enten Sørensen eller Forsendelse er valgt, vis de 3 tillægstjenester
+    if st.session_state.valgt_sorensen or st.session_state.valgt_forsendelse:
         st.divider()
-        st.write("**Viderelevering Krav: Sørensen (Forsendelse)**")
+        overskrift_tekst = "Sørensen (Forsendelse)" if st.session_state.valgt_sorensen else "Forsendelsesproces"
+        st.write(f"**Viderelevering Krav: {overskrift_tekst}**")
 
         har_fg = st.checkbox("Farlig gods")
         ant_fg = st.number_input("Antal farlig gods", min_value=0, value=1 if har_fg else 0) if har_fg else 0
@@ -208,7 +223,7 @@ else:
                 tillaeg.append(f"Service: {ant_srv}")
 
             info_str = ", ".join(tillaeg) if tillaeg else "Ingen tillæg"
-            gem_stempel("Tillægstjenester v. Sørensen", ekstra_info=info_str)
+            gem_stempel(f"Tillægstjenester v. {overskrift_tekst}", ekstra_info=info_str)
             st.success("Tillægstjenester registreret!")
             st.rerun()
 
@@ -273,6 +288,7 @@ if st.session_state.malinger:
                     st.session_state.pluk_trin = 1
                     st.session_state.transport_trykket = False
                     st.session_state.emballage_trykket = False
+                    st.session_state.berta_transport_trykket = False
                     st.session_state.bekraeft_send = False
                     st.success("Målingen er nu indsendt og gemt i dit Google Sheet!")
                     st.rerun()
