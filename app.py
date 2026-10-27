@@ -7,7 +7,7 @@ import uuid
 
 st.set_page_config(page_title="Carl Ras - TDABC Plukmåling", layout="centered")
 
-# CSS to force 3 columns on mobile and hide Streamlit UI elements
+# CSS to FORCE 3 columns grid on all mobile/tablet screens and hide Streamlit UI elements
 hide_st_style = """
     <style>
     #MainMenu {visibility: hidden !important; display: none !important;}
@@ -37,25 +37,38 @@ hide_st_style = """
         padding-bottom: 2rem !important;
     }
 
-    /* TVING 3 KOLONNER PÅ MOBIL / TELEFON (INGEN VERTIKAL STACKING) */
-    div[data-testid="stHorizontalBlock"] {
-        display: flex !important;
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        gap: 8px !important;
-        width: 100% !important;
-    }
-    div[data-testid="column"], div[data-testid="stColumn"] {
-        width: 32% !important;
-        flex: 1 1 32% !important;
-        min-width: 0 !important;
-    }
-    div[data-testid="column"] button, div[data-testid="stColumn"] button {
-        width: 100% !important;
-        min-height: 58px !important;
-        font-size: 22px !important;
-        font-weight: bold !important;
-        border-radius: 8px !important;
+    /* TVING 3 KOLONNER PÅ MOBIL / TELEFON (OVERRIDE STREAMLIT MOBILE MEDIA QUERIES) */
+    @media max-width 768px, all {
+        div[data-testid="stHorizontalBlock"],
+        div[data-testid="stHorizontalBlock"] > div,
+        [data-testid="stHorizontalBlock"] {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            width: 100% !important;
+            gap: 6px !important;
+            margin-bottom: 6px !important;
+        }
+        div[data-testid="stColumn"], 
+        div[data-testid="column"],
+        [data-testid="stColumn"],
+        [data-testid="column"] {
+            width: 33.33% !important;
+            min-width: 33.33% !important;
+            max-width: 33.33% !important;
+            flex: 1 1 33.33% !important;
+        }
+        div[data-testid="stColumn"] button, 
+        div[data-testid="column"] button,
+        [data-testid="stColumn"] button,
+        [data-testid="column"] button {
+            width: 100% !important;
+            min-height: 58px !important;
+            font-size: 22px !important;
+            font-weight: bold !important;
+            border-radius: 8px !important;
+            margin: 0 !important;
+        }
     }
     </style>
 """
@@ -95,6 +108,8 @@ if 'stafet_aktiv' not in st.session_state:
     st.session_state.stafet_aktiv = False
 if 'ordrenr_val' not in st.session_state:
     st.session_state.ordrenr_val = ""
+if 'manual_ordrenr_input' not in st.session_state:
+    st.session_state.manual_ordrenr_input = ""
 if 'gemt_stregkode' not in st.session_state:
     st.session_state.gemt_stregkode = "-"
 if 'stamdata_trin' not in st.session_state:
@@ -103,20 +118,26 @@ if 'stamdata_trin' not in st.session_state:
 def get_dansk_tid():
     return datetime.now(ZoneInfo("Europe/Copenhagen"))
 
-# Callbacks to manage numpad state cleanly without keyboard popup
+# Callbacks for Numpad matrix (akkumulerer cifre korrekt)
 def add_digit(digit):
     st.session_state.ordrenr_val += str(digit)
+    st.session_state.manual_ordrenr_input = st.session_state.ordrenr_val
 
 def delete_digit():
     if len(st.session_state.ordrenr_val) > 0:
         st.session_state.ordrenr_val = st.session_state.ordrenr_val[:-1]
+    st.session_state.manual_ordrenr_input = st.session_state.ordrenr_val
 
 def confirm_ordrenr():
-    if st.session_state.ordrenr_val.strip():
-        st.session_state.gemt_stregkode = st.session_state.ordrenr_val.strip()
+    val = st.session_state.ordrenr_val.strip()
+    if val:
+        st.session_state.gemt_stregkode = val
     else:
         st.session_state.gemt_stregkode = "-"
     st.session_state.stamdata_trin = 3
+
+def on_manual_change():
+    st.session_state.ordrenr_val = st.session_state.manual_ordrenr_input
 
 # 1. Stamdata (vises KUN når ruten endnu IKKE er aktiv)
 if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse:
@@ -144,7 +165,7 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
         st.subheader("1. Indtast ordrenummer")
         st.caption(f"Initialer: {st.session_state.get('saved_initialer', '')}")
 
-        # Viste display-boks (forhindrer at mobil-tastaturet popper op)
+        # Viste display-boks (Ren HTML visning - udløser ALDRIG mobil-tastatur ved tryk)
         visnings_tekst = st.session_state.ordrenr_val if st.session_state.ordrenr_val else "Indtast ordrenummer..."
         tekst_farve = "#111111" if st.session_state.ordrenr_val else "#888888"
         
@@ -153,7 +174,7 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
             background-color: #f8f9fa;
             border: 2px solid #0066cc;
             border-radius: 8px;
-            padding: 12px;
+            padding: 14px;
             font-size: 26px;
             font-weight: bold;
             text-align: center;
@@ -161,13 +182,15 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
             color: {tekst_farve};
             margin-bottom: 12px;
             box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+            user-select: none;
+            -webkit-user-select: none;
         ">
             {visnings_tekst}
         </div>
         """
         st.markdown(display_html, unsafe_allow_html=True)
         
-        # Touch Numpad Matrix (3x3 + 0 + X + Enter)
+        # Touch Numpad Matrix 3x3
         col1, col2, col3 = st.columns(3)
         with col1:
             st.button("1", use_container_width=True, key="btn_1", on_click=add_digit, args=(1,))
@@ -201,9 +224,12 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
             st.button("Enter / OK", type="primary", use_container_width=True, key="btn_ok", on_click=confirm_ordrenr)
 
         with st.expander("Indtast med laserscanner / pc-tastatur"):
-            man_input = st.text_input("Ordrenummer manuelt:", value=st.session_state.ordrenr_val, key="man_input_field")
-            if man_input != st.session_state.ordrenr_val:
-                st.session_state.ordrenr_val = man_input
+            st.text_input(
+                "Ordrenummer manuelt:", 
+                value=st.session_state.manual_ordrenr_input, 
+                key="manual_ordrenr_input",
+                on_change=on_manual_change
+            )
 
     # Trin 3: Pluktype og Start Plukrute
     elif st.session_state.stamdata_trin == 3:
@@ -242,7 +268,7 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
             st.session_state.malinger.append({
                 'Dato': nu.strftime('%Y-%m-%d'),
                 'Tidspunkt': nu.strftime('%H:%M:%S'),
-                'Initialer': st.session_state.get('saved_initialer', 'Ukendt'),
+                'Initialer': st.session_state.get('saved_initialer', ''),
                 'Pluktype': st.session_state.endelig_pluktype,
                 'Handling': "Start plukrute",
                 'Ekstra_Info': f"Rute-ID: {st.session_state.rute_id} | Stregkode: {st.session_state.get('gemt_stregkode', '-')}"
@@ -403,8 +429,6 @@ if st.session_state.rute_aktiv:
         st.session_state.klar_til_indsendelse = True
         st.session_state.valgt_sorensen = False
         st.session_state.valgt_forsendelse = False
-        st.session_state.stamdata_trin = 1
-        st.session_state.ordrenr_val = ""
         st.rerun()
 
 st.divider()
@@ -463,6 +487,7 @@ if st.session_state.malinger:
                     st.session_state.bekraeft_send = False
                     st.session_state.stamdata_trin = 1
                     st.session_state.ordrenr_val = ""
+                    st.session_state.manual_ordrenr_input = ""
                     st.success("Målingen er nu indsendt og gemt i dit Google Sheet!")
                     st.rerun()
                 else:
