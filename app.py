@@ -4,6 +4,7 @@ from datetime import datetime
 import requests
 from zoneinfo import ZoneInfo
 import uuid
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Carl Ras - TDABC Plukmåling", layout="centered")
 
@@ -87,6 +88,88 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
     if initialer:
         st.session_state.saved_initialer = initialer
 
+    st.write("**Stregkode / Ordrenummer:**")
+    
+    # HTML5 Live Kamera Scanner Component
+    html_scanner_code = """
+    <div id="scanner-container" style="text-align: center; font-family: sans-serif; margin-bottom: 10px;">
+        <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+        <button id="start-btn" onclick="toggleScanner()" style="background-color: #0066cc; color: white; border: none; padding: 10px 20px; font-size: 15px; border-radius: 6px; cursor: pointer; width: 100%;">
+            Start Live Videoscanner (Kamera)
+        </button>
+        <div id="reader" style="width: 100%; max-width: 400px; margin: 10px auto; display: none;"></div>
+        <div id="scan-result" style="margin-top: 8px; font-weight: bold; color: green;"></div>
+    </div>
+
+    <script>
+        let html5QrCode = null;
+        let isScanning = false;
+
+        function toggleScanner() {
+            const btn = document.getElementById('start-btn');
+            const readerDiv = document.getElementById('reader');
+            
+            if (!isScanning) {
+                readerDiv.style.display = 'block';
+                btn.innerText = 'Stop Live Videoscanner';
+                btn.style.backgroundColor = '#cc0000';
+                
+                html5QrCode = new Html5Qrcode("reader");
+                const config = { fps: 10, qrbox: { width: 250, height: 150 } };
+                
+                html5QrCode.start(
+                    { facingMode: "environment" },
+                    config,
+                    (decodedText, decodedResult) => {
+                        document.getElementById('scan-result').innerText = "Aflæst stregkode: " + decodedText;
+                        
+                        // Kopier til udklipsholder og send besked
+                        navigator.clipboard.writeText(decodedText).catch(() => {});
+                        
+                        // Spil bekræftelsesbip
+                        try {
+                            let ctx = new (window.AudioContext || window.webkitAudioContext)();
+                            let osc = ctx.createOscillator();
+                            osc.type = "sine";
+                            osc.frequency.value = 800;
+                            osc.connect(ctx.destination);
+                            osc.start();
+                            setTimeout(() => osc.stop(), 150);
+                        } catch(e) {}
+
+                        // Stop scanner automatisk efter match
+                        html5QrCode.stop().then(() => {
+                            readerDiv.style.display = 'none';
+                            btn.innerText = 'Start Live Videoscanner (Kamera)';
+                            btn.style.backgroundColor = '#0066cc';
+                            isScanning = false;
+                        }).catch(() => {});
+                    },
+                    (errorMessage) => {}
+                ).catch(err => {
+                    alert("Kameratilladelse afvist eller bagkamera ikke fundet: " + err);
+                    readerDiv.style.display = 'none';
+                    btn.innerText = 'Start Live Videoscanner (Kamera)';
+                    btn.style.backgroundColor = '#0066cc';
+                    isScanning = false;
+                });
+                
+                isScanning = true;
+            } else {
+                if (html5QrCode) {
+                    html5QrCode.stop().then(() => {
+                        readerDiv.style.display = 'none';
+                        btn.innerText = 'Start Live Videoscanner (Kamera)';
+                        btn.style.backgroundColor = '#0066cc';
+                        isScanning = false;
+                    }).catch(() => {});
+                }
+            }
+        }
+    </script>
+    """
+    components.html(html_scanner_code, height=180)
+
     stregkode_input = st.text_input(
         "Indtast eller scan med laserscanner:",
         value=st.session_state.get('gemt_stregkode', '') if st.session_state.get('gemt_stregkode', '') != '-' else '',
@@ -131,7 +214,6 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
             st.session_state.berta_transport_trykket = False
             st.session_state.stafet_aktiv = False
 
-            # Gem første stempel
             nu = get_dansk_tid()
             st.session_state.malinger.append({
                 'Dato': nu.strftime('%Y-%m-%d'),
@@ -172,7 +254,6 @@ if st.session_state.rute_aktiv:
     
     hoved_p = st.session_state.get('valgt_hoved_pluktype', '')
 
-    # Special-håndtering for Pallepluk (valg af type EFTER rute-start)
     if hoved_p == "Pallepluk":
         st.write("**Palletype valgt på ruten:**")
         ptype = st.radio("Vælg palletype *", ["Helpalle pluk", "Halv pallepluk"], horizontal=True, key="palle_radio")
@@ -180,7 +261,6 @@ if st.session_state.rute_aktiv:
             st.session_state.palle_type = ptype
             st.session_state.endelig_pluktype = f"Pallepluk ({ptype})"
 
-    # Special-håndtering for Buffer pluk (Brug af Berta)
     if hoved_p == "Buffer pluk":
         st.write("**Brug af Berta:**")
         berta_opt = st.radio("Brug af Berta *", ["Nej", "Ja"], horizontal=True, key="berta_radio")
@@ -193,7 +273,6 @@ if st.session_state.rute_aktiv:
                 gem_stempel("Ankommet til Berta")
                 st.rerun()
     else:
-        # For alle andre pluktyper
         if not st.session_state.emballage_trykket:
             emb_type = "secondary"
             if st.button("Afslut emballage pålægning", type=emb_type, use_container_width=True):
@@ -203,10 +282,7 @@ if st.session_state.rute_aktiv:
 
     st.divider()
 
-    # Vis KUN plukmodul hvis man ikke er i afslutningsfasen
     if not st.session_state.valgt_sorensen and not st.session_state.valgt_forsendelse:
-        
-        # Instruks for Stafetpluk
         st.info("Husk Stafet Pluk Regel: Tryk først på 'Ankommet til lokation', når du fysisk står ved plukpladsen!")
 
         trin = st.session_state.pluk_trin
@@ -228,7 +304,6 @@ if st.session_state.rute_aktiv:
                     st.session_state.pluk_trin += 1
                 st.rerun()
 
-        # Konsolideringsreol / Stafetpluk modul
         st.write("---")
         st.caption("Konsolideringsreol / Stafetpluk:")
         stafet_label = "Afslut Stafet Pluk (Konsolideringsreol)" if st.session_state.stafet_aktiv else "Start Stafet Pluk (Konsolideringsreol)"
@@ -243,7 +318,6 @@ if st.session_state.rute_aktiv:
 
     st.subheader("Afslutning af rute")
 
-    # Bemærkning / Fejl på ruten
     with st.expander("Tilføj bemærkning / fejl på rute"):
         bemaerkning_input = st.text_input("Beskrivelse af fejl eller afvigelse:", key="bemaerkning_input_field", placeholder="f.eks. manglende vare, beskadiget emballage")
         if st.button("Gem bemærkning"):
@@ -270,7 +344,6 @@ if st.session_state.rute_aktiv:
             gem_stempel("Forsendelsesproces begyndt")
             st.rerun()
 
-    # Fælles tillægstjenester for BÅDE Sørensen og Forsendelse
     if st.session_state.valgt_sorensen or st.session_state.valgt_forsendelse:
         overskrift = "Sørensen (Forsendelse)" if st.session_state.valgt_sorensen else "Forsendelsesproces"
         st.divider()
