@@ -131,6 +131,7 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
             st.session_state.berta_transport_trykket = False
             st.session_state.stafet_aktiv = False
 
+            # Gem første stempel
             nu = get_dansk_tid()
             st.session_state.malinger.append({
                 'Dato': nu.strftime('%Y-%m-%d'),
@@ -171,6 +172,7 @@ if st.session_state.rute_aktiv:
     
     hoved_p = st.session_state.get('valgt_hoved_pluktype', '')
 
+    # Special-håndtering for Pallepluk (valg af type EFTER rute-start)
     if hoved_p == "Pallepluk":
         st.write("**Palletype valgt på ruten:**")
         ptype = st.radio("Vælg palletype *", ["Helpalle pluk", "Halv pallepluk"], horizontal=True, key="palle_radio")
@@ -178,6 +180,7 @@ if st.session_state.rute_aktiv:
             st.session_state.palle_type = ptype
             st.session_state.endelig_pluktype = f"Pallepluk ({ptype})"
 
+    # Special-håndtering for Buffer pluk (Brug af Berta)
     if hoved_p == "Buffer pluk":
         st.write("**Brug af Berta:**")
         berta_opt = st.radio("Brug af Berta *", ["Nej", "Ja"], horizontal=True, key="berta_radio")
@@ -190,6 +193,7 @@ if st.session_state.rute_aktiv:
                 gem_stempel("Ankommet til Berta")
                 st.rerun()
     else:
+        # For alle andre pluktyper
         if not st.session_state.emballage_trykket:
             emb_type = "secondary"
             if st.button("Afslut emballage pålægning", type=emb_type, use_container_width=True):
@@ -199,7 +203,10 @@ if st.session_state.rute_aktiv:
 
     st.divider()
 
+    # Vis KUN plukmodul hvis man ikke er i afslutningsfasen
     if not st.session_state.valgt_sorensen and not st.session_state.valgt_forsendelse:
+        
+        # Instruks for Stafetpluk
         st.info("Husk Stafet Pluk Regel: Tryk først på 'Ankommet til lokation', når du fysisk står ved plukpladsen!")
 
         trin = st.session_state.pluk_trin
@@ -221,6 +228,7 @@ if st.session_state.rute_aktiv:
                     st.session_state.pluk_trin += 1
                 st.rerun()
 
+        # Konsolideringsreol / Stafetpluk modul
         st.write("---")
         st.caption("Konsolideringsreol / Stafetpluk:")
         stafet_label = "Afslut Stafet Pluk (Konsolideringsreol)" if st.session_state.stafet_aktiv else "Start Stafet Pluk (Konsolideringsreol)"
@@ -235,6 +243,7 @@ if st.session_state.rute_aktiv:
 
     st.subheader("Afslutning af rute")
 
+    # Bemærkning / Fejl på ruten
     with st.expander("Tilføj bemærkning / fejl på rute"):
         bemaerkning_input = st.text_input("Beskrivelse af fejl eller afvigelse:", key="bemaerkning_input_field", placeholder="f.eks. manglende vare, beskadiget emballage")
         if st.button("Gem bemærkning"):
@@ -261,6 +270,7 @@ if st.session_state.rute_aktiv:
             gem_stempel("Forsendelsesproces begyndt")
             st.rerun()
 
+    # Fælles tillægstjenester for BÅDE Sørensen og Forsendelse
     if st.session_state.valgt_sorensen or st.session_state.valgt_forsendelse:
         overskrift = "Sørensen (Forsendelse)" if st.session_state.valgt_sorensen else "Forsendelsesproces"
         st.divider()
