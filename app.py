@@ -4,6 +4,8 @@ from datetime import datetime
 import requests
 from zoneinfo import ZoneInfo
 import uuid
+import os
+import shutil
 import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Carl Ras - TDABC Plukmåling", layout="centered")
@@ -76,6 +78,139 @@ if 'stafet_aktiv' not in st.session_state:
 if 'gemt_stregkode' not in st.session_state:
     st.session_state.gemt_stregkode = "-"
 
+# Opret automatisk scanner component mappe og HTML fil hvis den mangler
+component_dir = os.path.join(os.path.dirname(__file__), 'scanner_component')
+os.makedirs(component_dir, exist_ok=True)
+index_path = os.path.join(component_dir, 'index.html')
+
+html_component_code = """<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <script src="https://cdn.jsdelivr.net/npm/streamlit-component-lib@1.4.0/dist/streamlit-component-lib.js"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 0; background: transparent; }
+        .scanner-box { border: 1px solid #d0d7de; border-radius: 8px; padding: 12px; background: #ffffff; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        .input-field { width: 100%; padding: 12px; font-size: 16px; border: 1px solid #bbb; border-radius: 6px; box-sizing: border-box; margin-top: 8px; font-family: inherit; }
+        .cam-btn { background-color: #0066cc; color: white; border: none; padding: 12px 16px; font-size: 15px; border-radius: 6px; cursor: pointer; width: 100%; font-weight: 600; margin-bottom: 4px; transition: background 0.2s; }
+        .cam-btn:hover { background-color: #0052a3; }
+        .cam-btn.active { background-color: #cc0000; }
+        #reader { width: 100%; max-width: 380px; margin: 10px auto; border-radius: 8px; overflow: hidden; display: none; }
+        .status-msg { margin-top: 8px; font-size: 14px; color: #28a745; font-weight: 600; }
+        .label-text { font-size: 14px; font-weight: 600; text-align: left; margin-bottom: 6px; color: #333; display: block; }
+    </style>
+</head>
+<body>
+    <div class="scanner-box">
+        <span class="label-text">Stregkode / Ordrenummer:</span>
+        <button id="cam-btn" class="cam-btn" onclick="toggleCamera()">Start Live Kamerascanner</button>
+        <div id="reader"></div>
+        <input type="text" id="barcode-input" class="input-field" placeholder="Scan med kamerascan, laserscanner eller indtast..." oninput="onManualInput(this.value)" />
+        <div id="status" class="status-msg"></div>
+    </div>
+
+    <script>
+        let html5QrCode = null;
+        let isCameraOn = false;
+
+        function updateHeight() {
+            Streamlit.setFrameHeight(document.body.scrollHeight + 15);
+        }
+
+        function sendToStreamlit(value) {
+            Streamlit.setComponentValue(value);
+            document.getElementById('barcode-input').value = value;
+            document.getElementById('status').innerText = value ? "Aflæst stregkode: " + value : "";
+            updateHeight();
+        }
+
+        function onManualInput(val) {
+            Streamlit.setComponentValue(val.trim());
+            document.getElementById('status').innerText = val.trim() ? "Indtastet kode: " + val.trim() : "";
+            updateHeight();
+        }
+
+        function toggleCamera() {
+            const btn = document.getElementById('cam-btn');
+            const readerDiv = document.getElementById('reader');
+
+            if (!isCameraOn) {
+                readerDiv.style.display = 'block';
+                btn.innerText = 'Stop Kamerascanner';
+                btn.classList.add('active');
+                updateHeight();
+
+                html5QrCode = new Html5Qrcode("reader");
+                const config = { fps: 10, qrbox: { width: 250, height: 150 } };
+
+                html5QrCode.start(
+                    { facingMode: "environment" },
+                    config,
+                    (decodedText, decodedResult) => {
+                        sendToStreamlit(decodedText);
+                        
+                        try {
+                            let ctx = new (window.AudioContext || window.webkitAudioContext)();
+                            let osc = ctx.createOscillator();
+                            osc.type = "sine";
+                            osc.frequency.value = 800;
+                            osc.connect(ctx.destination);
+                            osc.start();
+                            setTimeout(() => osc.stop(), 150);
+                        } catch(e) {}
+
+                        html5QrCode.stop().then(() => {
+                            readerDiv.style.display = 'none';
+                            btn.innerText = 'Start Live Kamerascanner';
+                            btn.classList.remove('active');
+                            isCameraOn = false;
+                            updateHeight();
+                        }).catch(() => {});
+                    },
+                    (errorMessage) => {}
+                ).catch(err => {
+                    alert("Kameratilladelse afvist eller bagkamera ikke fundet: " + err);
+                    readerDiv.style.display = 'none';
+                    btn.innerText = 'Start Live Kamerascanner';
+                    btn.classList.remove('active');
+                    isCameraOn = false;
+                    updateHeight();
+                });
+
+                isCameraOn = true;
+            } else {
+                if (html5QrCode) {
+                    html5QrCode.stop().then(() => {
+                        readerDiv.style.display = 'none';
+                        btn.innerText = 'Start Live Kamerascanner';
+                        btn.classList.remove('active');
+                        isCameraOn = false;
+                        updateHeight();
+                    }).catch(() => {});
+                }
+            }
+        }
+
+        Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, function(event) {
+            updateHeight();
+            if (event.detail && event.detail.args) {
+                const defVal = event.detail.args.default_value;
+                if (!document.getElementById('barcode-input').value && defVal && defVal !== '-') {
+                    document.getElementById('barcode-input').value = defVal;
+                }
+            }
+        });
+        Streamlit.init();
+    </script>
+</body>
+</html>"""
+
+with open(index_path, 'w', encoding='utf-8') as f:
+    f.write(html_component_code)
+
+barcode_scanner_comp = components.declare_component('barcode_scanner_comp', path=component_dir)
+
 # Helper for dansk lokal tid
 def get_dansk_tid():
     return datetime.now(ZoneInfo("Europe/Copenhagen"))
@@ -88,98 +223,12 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
     if initialer:
         st.session_state.saved_initialer = initialer
 
-    st.write("**Stregkode / Ordrenummer:**")
+    # Brug den integrerede scanner-komponent
+    scannet_val = barcode_scanner_comp(default_value=st.session_state.get('gemt_stregkode', '-'), key="live_barcode_scanner")
     
-    # HTML5 Live Kamera Scanner Component
-    html_scanner_code = """
-    <div id="scanner-container" style="text-align: center; font-family: sans-serif; margin-bottom: 10px;">
-        <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-        <button id="start-btn" onclick="toggleScanner()" style="background-color: #0066cc; color: white; border: none; padding: 10px 20px; font-size: 15px; border-radius: 6px; cursor: pointer; width: 100%;">
-            Start Live Videoscanner (Kamera)
-        </button>
-        <div id="reader" style="width: 100%; max-width: 400px; margin: 10px auto; display: none;"></div>
-        <div id="scan-result" style="margin-top: 8px; font-weight: bold; color: green;"></div>
-    </div>
-
-    <script>
-        let html5QrCode = null;
-        let isScanning = false;
-
-        function toggleScanner() {
-            const btn = document.getElementById('start-btn');
-            const readerDiv = document.getElementById('reader');
-            
-            if (!isScanning) {
-                readerDiv.style.display = 'block';
-                btn.innerText = 'Stop Live Videoscanner';
-                btn.style.backgroundColor = '#cc0000';
-                
-                html5QrCode = new Html5Qrcode("reader");
-                const config = { fps: 10, qrbox: { width: 250, height: 150 } };
-                
-                html5QrCode.start(
-                    { facingMode: "environment" },
-                    config,
-                    (decodedText, decodedResult) => {
-                        document.getElementById('scan-result').innerText = "Aflæst stregkode: " + decodedText;
-                        
-                        // Kopier til udklipsholder og send besked
-                        navigator.clipboard.writeText(decodedText).catch(() => {});
-                        
-                        // Spil bekræftelsesbip
-                        try {
-                            let ctx = new (window.AudioContext || window.webkitAudioContext)();
-                            let osc = ctx.createOscillator();
-                            osc.type = "sine";
-                            osc.frequency.value = 800;
-                            osc.connect(ctx.destination);
-                            osc.start();
-                            setTimeout(() => osc.stop(), 150);
-                        } catch(e) {}
-
-                        // Stop scanner automatisk efter match
-                        html5QrCode.stop().then(() => {
-                            readerDiv.style.display = 'none';
-                            btn.innerText = 'Start Live Videoscanner (Kamera)';
-                            btn.style.backgroundColor = '#0066cc';
-                            isScanning = false;
-                        }).catch(() => {});
-                    },
-                    (errorMessage) => {}
-                ).catch(err => {
-                    alert("Kameratilladelse afvist eller bagkamera ikke fundet: " + err);
-                    readerDiv.style.display = 'none';
-                    btn.innerText = 'Start Live Videoscanner (Kamera)';
-                    btn.style.backgroundColor = '#0066cc';
-                    isScanning = false;
-                });
-                
-                isScanning = true;
-            } else {
-                if (html5QrCode) {
-                    html5QrCode.stop().then(() => {
-                        readerDiv.style.display = 'none';
-                        btn.innerText = 'Start Live Videoscanner (Kamera)';
-                        btn.style.backgroundColor = '#0066cc';
-                        isScanning = false;
-                    }).catch(() => {});
-                }
-            }
-        }
-    </script>
-    """
-    components.html(html_scanner_code, height=180)
-
-    stregkode_input = st.text_input(
-        "Indtast eller scan med laserscanner:",
-        value=st.session_state.get('gemt_stregkode', '') if st.session_state.get('gemt_stregkode', '') != '-' else '',
-        key="stregkode_text_input",
-        placeholder="Scan eller indtast stregkode/ordrenummer..."
-    ).strip()
-    
-    if stregkode_input:
-        st.session_state.gemt_stregkode = stregkode_input
-    else:
+    if scannet_val is not None and str(scannet_val).strip() != '':
+        st.session_state.gemt_stregkode = str(scannet_val).strip()
+    elif 'gemt_stregkode' not in st.session_state:
         st.session_state.gemt_stregkode = "-"
 
     hoved_pluktype = st.selectbox(
