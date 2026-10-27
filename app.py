@@ -4,8 +4,14 @@ from datetime import datetime
 import requests
 from zoneinfo import ZoneInfo
 import uuid
-import cv2
 import numpy as np
+from PIL import Image
+
+try:
+    import cv2
+    CV2_AVAILABLE = True
+except ImportError:
+    CV2_AVAILABLE = False
 
 st.set_page_config(page_title="Carl Ras - TDABC Plukmåling", layout="centered")
 
@@ -76,8 +82,6 @@ if 'stafet_aktiv' not in st.session_state:
     st.session_state.stafet_aktiv = False
 if 'gemt_stregkode' not in st.session_state:
     st.session_state.gemt_stregkode = "-"
-if 'stregkode_text_input' not in st.session_state:
-    st.session_state.stregkode_text_input = ""
 
 # Helper for dansk lokal tid
 def get_dansk_tid():
@@ -85,7 +89,7 @@ def get_dansk_tid():
 
 # Stregkodedetektor
 def aflaes_stregkode_billede(billede_bytes):
-    if not billede_bytes:
+    if not CV2_AVAILABLE:
         return None
     try:
         file_bytes = np.frombuffer(billede_bytes, np.uint8)
@@ -93,33 +97,50 @@ def aflaes_stregkode_billede(billede_bytes):
         if img_bgr is None:
             return None
             
-        detector = cv2.barcode.BarcodeDetector()
-        scales = [1.0, 0.5, 1.5, 2.0]
-        
-        for scale in scales:
-            if scale != 1.0:
-                h, w = img_bgr.shape[:2]
-                resized = cv2.resize(img_bgr, (int(w * scale), int(h * scale)))
-            else:
-                resized = img_bgr
-                
-            for test_img in [resized, cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)]:
-                try:
-                    info, _, _ = detector.detectAndDecode(test_img)
-                    if info and str(info).strip():
-                        return str(info).strip()
-                except Exception:
-                    pass
+        if hasattr(cv2, 'barcode'):
+            detector = cv2.barcode.BarcodeDetector()
+            scales = [1.0, 0.5, 1.5, 2.0]
+            for scale in scales:
+                if scale != 1.0:
+                    h, w = img_bgr.shape[:2]
+                    resized = cv2.resize(img_bgr, (int(w * scale), int(h * scale)))
+                else:
+                    resized = img_bgr
                     
+                for test_img in [resized, cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)]:
+                    try:
+                        res = detector.detectAndDecodeWithType(test_img)
+                        if res and len(res) > 0 and res[0]:
+                            info = res[0]
+                            if isinstance(info, (list, tuple)):
+                                vals = [str(x).strip() for x in info if x and str(x).strip()]
+                                if vals:
+                                    return vals[0]
+                            elif isinstance(info, str) and info.strip():
+                                return info.strip()
+                    except Exception:
+                        pass
+                        
+                    try:
+                        res_m = detector.detectAndDecodeMulti(test_img)
+                        if res_m and len(res_m) > 1 and res_m[1]:
+                            for val in res_m[1]:
+                                if val and str(val).strip():
+                                    return str(val).strip()
+                    except Exception:
+                        pass
+
                 try:
-                    retval, decoded_info, decoded_type, _ = detector.detectAndDecodeWithType(test_img)
-                    if retval and decoded_info:
-                        if isinstance(decoded_info, (list, tuple)):
-                            vals = [str(x).strip() for x in decoded_info if x and str(x).strip()]
+                    rot90 = cv2.rotate(resized, cv2.ROTATE_90_CLOCKWISE)
+                    res_r = detector.detectAndDecodeWithType(rot90)
+                    if res_r and len(res_r) > 0 and res_r[0]:
+                        info = res_r[0]
+                        if isinstance(info, (list, tuple)):
+                            vals = [str(x).strip() for x in info if x and str(x).strip()]
                             if vals:
                                 return vals[0]
-                        elif isinstance(decoded_info, str) and decoded_info.strip():
-                            return decoded_info.strip()
+                        elif isinstance(info, str) and info.strip():
+                            return info.strip()
                 except Exception:
                     pass
 
@@ -145,29 +166,29 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
 
     st.write("**Stregkode / Ordrenummer:**")
     
-    # Kamerascanner vises direkte uden expander for at undgå sort/blank skærm på iOS/Safari
-    vis_kamera = st.checkbox("Åbn kamerascanner (viser kamerasøger på skærmen)", value=False)
+    vis_kamera = st.checkbox("Åbn kamerascanner", key="vis_kamera_chk")
     if vis_kamera:
-        kamera_billede = st.camera_input("Kamerascan (hold stregkoden foran kameraet og tryk)", key="kamera_scan_widget")
-        if kamera_billede is not None:
-            scannet_kode = aflaes_stregkode_billede(kamera_billede.getvalue())
-            if scannet_kode:
-                st.session_state.gemt_stregkode = scannet_kode
-                st.session_state.stregkode_text_input = scannet_kode
-                st.success(f"Stregkode aflæst og indsat: {scannet_kode}")
-            else:
-                st.warning("Ingen stregkode fundet i billedet. Prøv at holde kameraet tæt og skarpt på stregkoden, eller indtast nummeret manuelt i feltet nedenfor.")
+        if not CV2_AVAILABLE:
+            st.warning("Kamerascanning kræver at 'opencv-python-headless' er tilføjet til requirements.txt på GitHub. Du kan stadig indtaste eller scanne med laserscanner nedenfor.")
+        else:
+            kamera_billede = st.camera_input("Kamerascan", key="kamera_scan")
+            if kamera_billede is not None:
+                scannet_kode = aflaes_stregkode_billede(kamera_billede.getvalue())
+                if scannet_kode:
+                    st.session_state.gemt_stregkode = scannet_kode
+                    st.success(f"Stregkode aflæst: {scannet_kode}")
+                else:
+                    st.warning("Ingen stregkode fundet i billedet. Prøv at holde kameraet tæt og skarpt på stregkoden, eller indtast nummeret manuelt nedenfor.")
 
     stregkode_input = st.text_input(
         "Indtast eller scan med laserscanner:",
+        value=st.session_state.get('gemt_stregkode', '') if st.session_state.get('gemt_stregkode', '') != '-' else '',
         key="stregkode_text_input",
         placeholder="Scan eller indtast stregkode/ordrenummer..."
     ).strip()
     
     if stregkode_input:
         st.session_state.gemt_stregkode = stregkode_input
-    elif not st.session_state.get('gemt_stregkode'):
-        st.session_state.gemt_stregkode = "-"
 
     hoved_pluktype = st.selectbox(
         "Vælg pluktype *",
