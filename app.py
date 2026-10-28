@@ -4,10 +4,13 @@ from datetime import datetime
 import requests
 from zoneinfo import ZoneInfo
 import uuid
+import json
+import os
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Carl Ras - TDABC Plukmåling", layout="centered")
 
-# CSS to FORCE 3 columns grid on mobile for numpad, and ensure ALL button texts wrap and are NEVER truncated with "..."
+# Hide Streamlit UI elements
 hide_st_style = """
     <style>
     #MainMenu {visibility: hidden !important; display: none !important;}
@@ -27,7 +30,6 @@ hide_st_style = """
         padding-right: 0.8rem !important;
     }
 
-    /* ALL BUTTONS: Allow text wrapping, no truncation (...) and auto height */
     button, div[data-testid="stButton"] button {
         white-space: normal !important;
         word-wrap: break-word !important;
@@ -42,47 +44,12 @@ hide_st_style = """
         border-radius: 8px !important;
     }
 
-    /* Primary buttons in RED for active zone selection */
-    button[kind="primary"], div[data-testid="stButton"] button[kind="primary"] {
-        background-color: #d32f2f !important;
-        color: white !important;
-        border-color: #b71c1c !important;
-    }
-
     button p, button div, button span {
         white-space: normal !important;
         word-wrap: break-word !important;
         text-overflow: clip !important;
         line-height: 1.25 !important;
         font-size: inherit !important;
-    }
-
-    /* TVING 3 KOLONNER PÅ MOBIL / TELEFON FOR NUMPAD GRID & ZONE BUTTONS */
-    @media max-width 768px, all {
-        div[data-testid="stHorizontalBlock"] {
-            display: flex !important;
-            flex-direction: row !important;
-            flex-wrap: nowrap !important;
-            width: 100% !important;
-            gap: 6px !important;
-            margin-bottom: 6px !important;
-        }
-        div[data-testid="stColumn"], 
-        div[data-testid="column"] {
-            width: 50% !important;
-            min-width: 0 !important;
-            flex: 1 1 50% !important;
-        }
-        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(3)) > div[data-testid="stColumn"],
-        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(3)) > div[data-testid="column"] {
-            width: 33.33% !important;
-            flex: 1 1 33.33% !important;
-        }
-        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(4)) > div[data-testid="stColumn"],
-        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(4)) > div[data-testid="column"] {
-            width: 25% !important;
-            flex: 1 1 25% !important;
-        }
     }
     </style>
 """
@@ -91,7 +58,69 @@ st.markdown(hide_st_style, unsafe_allow_html=True)
 st.title("Carl Ras - Plukmåling (TDABC)")
 st.caption("Registrer tidsstempler for plukruter på lageret.")
 
-# Session state initialization
+ZONE_SEQUENCE = ["Alpha", "Beta", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel", "India", "Juliet"]
+
+# Helper for Danish local time
+def get_dansk_tid():
+    return datetime.now(ZoneInfo("Europe/Copenhagen"))
+
+# Persistent State Management Functions
+def save_persistent_state():
+    r_id = st.session_state.get('rute_id', '')
+    if r_id:
+        data = {
+            "saved_initialer": st.session_state.get('saved_initialer', ''),
+            "scanned_orders": st.session_state.get('scanned_orders', []),
+            "gemt_stregkode": st.session_state.get('gemt_stregkode', '-'),
+            "rute_id": r_id,
+            "rute_aktiv": st.session_state.get('rute_aktiv', False),
+            "klar_til_indsendelse": st.session_state.get('klar_til_indsendelse', False),
+            "pluk_trin": st.session_state.get('pluk_trin', 1),
+            "malinger": st.session_state.get('malinger', []),
+            "transport_trykket": st.session_state.get('transport_trykket', False),
+            "emballage_trykket": st.session_state.get('emballage_trykket', False),
+            "valgt_sorensen": st.session_state.get('valgt_sorensen', False),
+            "valgt_forsendelse": st.session_state.get('valgt_forsendelse', False),
+            "endelig_pluktype": st.session_state.get('endelig_pluktype', ''),
+            "valgt_hoved_pluktype": st.session_state.get('valgt_hoved_pluktype', ''),
+            "stamdata_trin": st.session_state.get('stamdata_trin', 1)
+        }
+        filepath = f"/tmp/rute_state_{r_id}.json"
+        try:
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False)
+        except Exception:
+            pass
+
+def load_persistent_state(r_id):
+    filepath = f"/tmp/rute_state_{r_id}.json"
+    if os.path.exists(filepath):
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            for key, val in data.items():
+                st.session_state[key] = val
+            return True
+        except Exception:
+            pass
+    return False
+
+def clear_persistent_state():
+    r_id = st.session_state.get('rute_id', '')
+    if r_id:
+        filepath = f"/tmp/rute_state_{r_id}.json"
+        if os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+            except Exception:
+                pass
+
+# Restore state from query param if available
+query_rute = st.query_params.get("rute", "")
+if query_rute and not st.session_state.get('rute_id'):
+    load_persistent_state(query_rute)
+
+# Session state defaults
 if 'malinger' not in st.session_state:
     st.session_state.malinger = []
 if 'pluk_trin' not in st.session_state:
@@ -116,85 +145,60 @@ if 'berta_valgt' not in st.session_state:
     st.session_state.berta_valgt = "Nej"
 if 'berta_transport_trykket' not in st.session_state:
     st.session_state.berta_transport_trykket = False
-if 'palle_type' not in st.session_state:
-    st.session_state.palle_type = "Helpalle pluk"
-if 'stafet_aktiv' not in st.session_state:
-    st.session_state.stafet_aktiv = False
-if 'stamdata_trin' not in st.session_state:
-    st.session_state.stamdata_trin = 1
-
-# Zoner og ordrenumre tilstand
-if 'aktive_zoner' not in st.session_state:
-    st.session_state.aktive_zoner = {}  # e.g. {'Alpha': '030684132', 'Beta': ''}
-if 'aktiv_fokus_zone' not in st.session_state:
-    st.session_state.aktiv_fokus_zone = "Standard"
-if 'ordrenr_val' not in st.session_state:
-    st.session_state.ordrenr_val = ""
-if 'manual_ordrenr_input' not in st.session_state:
-    st.session_state.manual_ordrenr_input = ""
+if 'scanned_orders' not in st.session_state:
+    st.session_state.scanned_orders = [] # List of {"zone": "Alpha", "code": "030684132"}
 if 'gemt_stregkode' not in st.session_state:
     st.session_state.gemt_stregkode = "-"
+if 'stamdata_trin' not in st.session_state:
+    st.session_state.stamdata_trin = 1
+if 'scan_input_key' not in st.session_state:
+    st.session_state.scan_input_key = 0
 
-def get_dansk_tid():
-    return datetime.now(ZoneInfo("Europe/Copenhagen"))
+# Sync HTML localStorage with Streamlit query param for rock-solid reload protection
+active_r_id = st.session_state.get('rute_id', '')
+js_sync_code = f"""
+<script>
+    const activeRouteId = "{active_r_id}";
+    if (activeRouteId) {{
+        localStorage.setItem('cr_tdabc_active_rute', activeRouteId);
+    }} else {{
+        const savedRoute = localStorage.getItem('cr_tdabc_active_rute');
+        const urlParams = new URLSearchParams(window.location.search);
+        if (savedRoute && !urlParams.has('rute')) {{
+            window.location.search = '?rute=' + savedRoute;
+        }}
+    }}
+</script>
+"""
+components.html(js_sync_code, height=0)
 
-# Callbacks for Zone selection
-def toggle_zone(zone_name):
-    if zone_name in st.session_state.aktive_zoner:
-        # Hvis den allerede er valgt, fjernes den
-        del st.session_state.aktive_zoner[zone_name]
-        # Hvis det var den aktive fokus zone, skift fokus
-        if st.session_state.aktiv_fokus_zone == zone_name:
-            if st.session_state.aktive_zoner:
-                st.session_state.aktiv_fokus_zone = list(st.session_state.aktive_zoner.keys())[0]
-                st.session_state.ordrenr_val = st.session_state.aktive_zoner[st.session_state.aktiv_fokus_zone]
-            else:
-                st.session_state.aktiv_fokus_zone = "Standard"
-                st.session_state.ordrenr_val = ""
-    else:
-        # Tilføj zone og sæt som aktiv fokus zone
-        st.session_state.aktive_zoner[zone_name] = ""
-        st.session_state.aktiv_fokus_zone = zone_name
-        st.session_state.ordrenr_val = ""
+# Callbacks for scanning
+def on_scan_submitted():
+    key_name = f"scan_field_{st.session_state.scan_input_key}"
+    scanned_text = st.session_state.get(key_name, "").strip()
+    if scanned_text:
+        next_idx = len(st.session_state.scanned_orders)
+        zone_label = ZONE_SEQUENCE[next_idx] if next_idx < len(ZONE_SEQUENCE) else f"Zone {next_idx + 1}"
+        st.session_state.scanned_orders.append({"zone": zone_label, "code": scanned_text})
+        st.session_state.scan_input_key += 1  # Resets input field cleanly
+        save_persistent_state()
 
-def select_fokus_zone(zone_name):
-    st.session_state.aktiv_fokus_zone = zone_name
-    st.session_state.ordrenr_val = st.session_state.aktive_zoner.get(zone_name, "")
-    st.session_state.manual_ordrenr_input = st.session_state.ordrenr_val
+def remove_scanned_order(idx):
+    if 0 <= idx < len(st.session_state.scanned_orders):
+        st.session_state.scanned_orders.pop(idx)
+        # Re-index remaining zones (Alpha, Beta, Charlie...)
+        for i in range(len(st.session_state.scanned_orders)):
+            st.session_state.scanned_orders[i]["zone"] = ZONE_SEQUENCE[i] if i < len(ZONE_SEQUENCE) else f"Zone {i + 1}"
+        save_persistent_state()
 
-# Callbacks for Numpad matrix
-def add_digit(digit):
-    st.session_state.ordrenr_val += str(digit)
-    st.session_state.manual_ordrenr_input = st.session_state.ordrenr_val
-    if st.session_state.aktiv_fokus_zone != "Standard":
-        st.session_state.aktive_zoner[st.session_state.aktiv_fokus_zone] = st.session_state.ordrenr_val
-
-def delete_digit():
-    if len(st.session_state.ordrenr_val) > 0:
-        st.session_state.ordrenr_val = st.session_state.ordrenr_val[:-1]
-    st.session_state.manual_ordrenr_input = st.session_state.ordrenr_val
-    if st.session_state.aktiv_fokus_zone != "Standard":
-        st.session_state.aktive_zoner[st.session_state.aktiv_fokus_zone] = st.session_state.ordrenr_val
-
-def confirm_ordrenr():
-    # Opbyg samlet stregkode/ordrenummer tekst til loggen
-    if st.session_state.aktive_zoner:
-        zoner_tekst_list = []
-        for z, val in st.session_state.aktive_zoner.items():
-            v = val.strip() if val.strip() else "Uden kode"
-            zoner_tekst_list.append(f"{z}: {v}")
-        st.session_state.gemt_stregkode = ", ".join(zoner_tekst_list)
-    elif st.session_state.ordrenr_val.strip():
-        st.session_state.gemt_stregkode = st.session_state.ordrenr_val.strip()
+def confirm_all_scans():
+    if st.session_state.scanned_orders:
+        formatted_list = [f"{item['zone']}: {item['code']}" for item in st.session_state.scanned_orders]
+        st.session_state.gemt_stregkode = ", ".join(formatted_list)
     else:
         st.session_state.gemt_stregkode = "-"
-    
     st.session_state.stamdata_trin = 3
-
-def on_manual_change():
-    st.session_state.ordrenr_val = st.session_state.manual_ordrenr_input
-    if st.session_state.aktiv_fokus_zone != "Standard":
-        st.session_state.aktive_zoner[st.session_state.aktiv_fokus_zone] = st.session_state.ordrenr_val
+    save_persistent_state()
 
 # 1. Stamdata (vises KUN når ruten endnu IKKE er aktiv)
 if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse:
@@ -213,108 +217,46 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
             if initialer_input:
                 st.session_state.saved_initialer = initialer_input
                 st.session_state.stamdata_trin = 2
+                save_persistent_state()
                 st.rerun()
             else:
                 st.warning("Indtast venligst dine initialer for at fortsætte.")
 
-    # Trin 2: Ordrenummer & Zoner (Touch Numpad 3x3)
+    # Trin 2: Automatic Auto-sequence Scanner Input (Alpha -> Beta -> Charlie -> Delta)
     elif st.session_state.stamdata_trin == 2:
-        st.subheader("1. Vælg zoner og indtast ordrenummer")
+        st.subheader("1. Scan ordrenumre med scanner")
         st.caption(f"Initialer: {st.session_state.get('saved_initialer', '')}")
 
-        # Vælg del-ordrer / zoner (Alpha, Beta, C, Delta)
-        st.write("**Tryk for at aktivere zoner på ruten (lyser rød når aktiv):**")
-        z_col1, z_col2, z_col3, z_col4 = st.columns(4)
-        
-        zoner_liste = ["Alpha", "Beta", "C", "Delta"]
-        cols = [z_col1, z_col2, z_col3, z_col4]
-        
-        for z_name, col in zip(zoner_liste, cols):
-            with col:
-                is_active = z_name in st.session_state.aktive_zoner
-                b_type = "primary" if is_active else "secondary"
-                label = f"{z_name}"
-                st.button(label, type=b_type, use_container_width=True, key=f"zone_btn_{z_name}", on_click=toggle_zone, args=(z_name,))
+        next_idx = len(st.session_state.scanned_orders)
+        next_label = ZONE_SEQUENCE[next_idx] if next_idx < len(ZONE_SEQUENCE) else f"Zone {next_idx + 1}"
 
-        # Visning af valgte zoner og deres koder
-        if st.session_state.aktive_zoner:
-            st.write("**Aktive zoner (tryk for at skifte fokus):**")
-            fokus_cols = st.columns(len(st.session_state.aktive_zoner))
-            for idx, (z_name, code) in enumerate(st.session_state.aktive_zoner.items()):
-                with fokus_cols[idx]:
-                    is_fokus = (z_name == st.session_state.aktiv_fokus_zone)
-                    btn_kind = "primary" if is_fokus else "secondary"
-                    disp_code = code if code else "Tast kode..."
-                    st.button(f"{z_name}\n({disp_code})", type=btn_kind, use_container_width=True, key=f"fokus_{z_name}", on_click=select_fokus_zone, args=(z_name,))
+        st.info(f"Klar til næste scan: **{next_label}**")
 
-        # Display-boks for den aktuelt valgte zone
-        fokus_titel = f"Ordrenummer [{st.session_state.aktiv_fokus_zone}]:" if st.session_state.aktiv_fokus_zone != "Standard" else "Ordrenummer:"
-        visnings_tekst = st.session_state.ordrenr_val if st.session_state.ordrenr_val else "Tast ordrenummer..."
-        tekst_farve = "#111111" if st.session_state.ordrenr_val else "#888888"
-        
-        display_html = f"""
-        <div style="
-            background-color: #f8f9fa;
-            border: 2px solid #d32f2f;
-            border-radius: 8px;
-            padding: 12px;
-            font-size: 24px;
-            font-weight: bold;
-            text-align: center;
-            letter-spacing: 2px;
-            color: {tekst_farve};
-            margin-top: 10px;
-            margin-bottom: 12px;
-            box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
-            user-select: none;
-            -webkit-user-select: none;
-        ">
-            <span style="font-size: 13px; color: #555; display: block; font-weight: normal; margin-bottom: 2px;">{fokus_titel}</span>
-            {visnings_tekst}
-        </div>
-        """
-        st.markdown(display_html, unsafe_allow_html=True)
-        
-        # Touch Numpad Matrix 3x3
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.button("1", use_container_width=True, key="btn_1", on_click=add_digit, args=(1,))
-        with col2:
-            st.button("2", use_container_width=True, key="btn_2", on_click=add_digit, args=(2,))
-        with col3:
-            st.button("3", use_container_width=True, key="btn_3", on_click=add_digit, args=(3,))
+        current_key = f"scan_field_{st.session_state.scan_input_key}"
+        st.text_input(
+            f"Scan stregkode for {next_label}:",
+            key=current_key,
+            placeholder=f"Scan med TC22 scanner for {next_label}...",
+            on_change=on_scan_submitted
+        )
 
-        col4, col5, col6 = st.columns(3)
-        with col4:
-            st.button("4", use_container_width=True, key="btn_4", on_click=add_digit, args=(4,))
-        with col5:
-            st.button("5", use_container_width=True, key="btn_5", on_click=add_digit, args=(5,))
-        with col6:
-            st.button("6", use_container_width=True, key="btn_6", on_click=add_digit, args=(6,))
+        # Vis scannede ordrer
+        if st.session_state.scanned_orders:
+            st.write("**Scannede ordrer på ruten:**")
+            for idx, item in enumerate(st.session_state.scanned_orders):
+                col_info, col_btn = st.columns([3, 1])
+                with col_info:
+                    st.success(f"**{item['zone']}**: `{item['code']}`")
+                with col_btn:
+                    if st.button("Slet", key=f"del_scan_{idx}", use_container_width=True):
+                        remove_scanned_order(idx)
+                        st.rerun()
 
-        col7, col8, col9 = st.columns(3)
-        with col7:
-            st.button("7", use_container_width=True, key="btn_7", on_click=add_digit, args=(7,))
-        with col8:
-            st.button("8", use_container_width=True, key="btn_8", on_click=add_digit, args=(8,))
-        with col9:
-            st.button("9", use_container_width=True, key="btn_9", on_click=add_digit, args=(9,))
-
-        col0, col_del, col_ok = st.columns(3)
-        with col0:
-            st.button("0", use_container_width=True, key="btn_0", on_click=add_digit, args=(0,))
-        with col_del:
-            st.button("X (Slet)", use_container_width=True, key="btn_del", on_click=delete_digit)
-        with col_ok:
-            st.button("Enter / OK", type="primary", use_container_width=True, key="btn_ok", on_click=confirm_ordrenr)
-
-        with st.expander("Indtast med laserscanner / pc-tastatur"):
-            st.text_input(
-                "Ordrenummer manuelt:", 
-                value=st.session_state.manual_ordrenr_input, 
-                key="manual_ordrenr_input",
-                on_change=on_manual_change
-            )
+        st.divider()
+        btn_label = "Færdig med at scanne ordrer ->" if st.session_state.scanned_orders else "Fortsæt uden ordrenummer ->"
+        if st.button(btn_label, type="primary", use_container_width=True):
+            confirm_all_scans()
+            st.rerun()
 
     # Trin 3: Pluktype og Start Plukrute
     elif st.session_state.stamdata_trin == 3:
@@ -336,7 +278,9 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
         st.divider()
 
         if st.button("Start plukrute", type="primary", use_container_width=True):
-            st.session_state.rute_id = f"R-{get_dansk_tid().strftime('%H%M%S')}-{uuid.uuid4().hex[:3].upper()}"
+            r_id = f"R-{get_dansk_tid().strftime('%H%M%S')}-{uuid.uuid4().hex[:3].upper()}"
+            st.session_state.rute_id = r_id
+            st.query_params["rute"] = r_id
             st.session_state.rute_aktiv = True
             st.session_state.klar_til_indsendelse = False
             st.session_state.pluk_trin = 1
@@ -347,7 +291,6 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
             st.session_state.bekraeft_send = False
             st.session_state.berta_valgt = "Nej"
             st.session_state.berta_transport_trykket = False
-            st.session_state.stafet_aktiv = False
 
             nu = get_dansk_tid()
             st.session_state.malinger.append({
@@ -358,6 +301,7 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
                 'Handling': "Start plukrute",
                 'Ekstra_Info': f"Rute-ID: {st.session_state.rute_id} | Ordre/Zoner: {st.session_state.get('gemt_stregkode', '-')}"
             })
+            save_persistent_state()
             st.rerun()
 
 elif st.session_state.klar_til_indsendelse:
@@ -382,19 +326,13 @@ def gem_stempel(handling, ekstra_info=""):
         'Handling': handling,
         'Ekstra_Info': info_tekst
     })
+    save_persistent_state()
 
 # 2. Registrering af faser (Vis kun hvis ruten er aktiv)
 if st.session_state.rute_aktiv:
     st.subheader("2. Registrer faser på ruten")
     
     hoved_p = st.session_state.get('valgt_hoved_pluktype', '')
-
-    if hoved_p == "Pallepluk":
-        st.write("**Palletype valgt på ruten:**")
-        ptype = st.radio("Vælg palletype *", ["Helpalle pluk", "Halv pallepluk"], horizontal=True, key="palle_radio")
-        if ptype != st.session_state.palle_type:
-            st.session_state.palle_type = ptype
-            st.session_state.endelig_pluktype = f"Pallepluk ({ptype})"
 
     if hoved_p == "Buffer pluk":
         st.write("**Brug af Berta:**")
@@ -418,8 +356,6 @@ if st.session_state.rute_aktiv:
     st.divider()
 
     if not st.session_state.valgt_sorensen and not st.session_state.valgt_forsendelse:
-        st.info("Husk Stafet Pluk Regel: Tryk først på 'Ankommet til lokation', når du fysisk står ved plukpladsen!")
-
         trin = st.session_state.pluk_trin
         st.write(f"**Aktuel plukplads: Nr. {trin} (af maks 100)**")
         
@@ -437,17 +373,8 @@ if st.session_state.rute_aktiv:
                 st.session_state.transport_trykket = False
                 if st.session_state.pluk_trin < 100:
                     st.session_state.pluk_trin += 1
+                save_persistent_state()
                 st.rerun()
-
-        st.write("---")
-        st.caption("Konsolideringsreol / Stafetpluk:")
-        stafet_label = "Afslut Stafet Pluk (Konsolideringsreol)" if st.session_state.stafet_aktiv else "Start Stafet Pluk (Konsolideringsreol)"
-        stafet_btn_type = "primary" if st.session_state.stafet_aktiv else "secondary"
-        if st.button(stafet_label, type=stafet_btn_type, use_container_width=True):
-            st.session_state.stafet_aktiv = not st.session_state.stafet_aktiv
-            handling_navn = "Start Stafet Pluk (Konsolideringsreol)" if st.session_state.stafet_aktiv else "Afslut Stafet Pluk (Konsolideringsreol)"
-            gem_stempel(handling_navn)
-            st.rerun()
 
         st.divider()
 
@@ -514,6 +441,7 @@ if st.session_state.rute_aktiv:
         st.session_state.klar_til_indsendelse = True
         st.session_state.valgt_sorensen = False
         st.session_state.valgt_forsendelse = False
+        save_persistent_state()
         st.rerun()
 
 st.divider()
@@ -561,6 +489,8 @@ if st.session_state.malinger:
                             sidste_fejl = str(e)
 
                 if fejl_antal == 0:
+                    clear_persistent_state()
+                    st.query_params.clear()
                     st.session_state.malinger = []
                     st.session_state.rute_aktiv = False
                     st.session_state.klar_til_indsendelse = False
@@ -571,10 +501,8 @@ if st.session_state.malinger:
                     st.session_state.emballage_trykket = False
                     st.session_state.bekraeft_send = False
                     st.session_state.stamdata_trin = 1
-                    st.session_state.ordrenr_val = ""
-                    st.session_state.manual_ordrenr_input = ""
-                    st.session_state.aktive_zoner = {}
-                    st.session_state.aktiv_fokus_zone = "Standard"
+                    st.session_state.scanned_orders = []
+                    st.session_state.rute_id = ""
                     st.success("Målingen er nu indsendt og gemt i dit Google Sheet!")
                     st.rerun()
                 else:
