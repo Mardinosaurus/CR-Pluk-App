@@ -78,6 +78,7 @@ def save_persistent_state():
             "pluk_trin": st.session_state.get('pluk_trin', 1),
             "malinger": st.session_state.get('malinger', []),
             "transport_trykket": st.session_state.get('transport_trykket', False),
+            "scanned_loc_current": st.session_state.get('scanned_loc_current', ''),
             "emballage_trykket": st.session_state.get('emballage_trykket', False),
             "valgt_sorensen": st.session_state.get('valgt_sorensen', False),
             "valgt_forsendelse": st.session_state.get('valgt_forsendelse', False),
@@ -137,6 +138,8 @@ if 'bekraeft_send' not in st.session_state:
     st.session_state.bekraeft_send = False
 if 'transport_trykket' not in st.session_state:
     st.session_state.transport_trykket = False
+if 'scanned_loc_current' not in st.session_state:
+    st.session_state.scanned_loc_current = ""
 if 'emballage_trykket' not in st.session_state:
     st.session_state.emballage_trykket = False
 if 'rute_id' not in st.session_state:
@@ -153,6 +156,8 @@ if 'stamdata_trin' not in st.session_state:
     st.session_state.stamdata_trin = 1
 if 'scan_input_key' not in st.session_state:
     st.session_state.scan_input_key = 0
+if 'loc_input_key' not in st.session_state:
+    st.session_state.loc_input_key = 0
 
 # Sync HTML localStorage with Streamlit query param for rock-solid reload protection
 active_r_id = st.session_state.get('rute_id', '')
@@ -172,7 +177,7 @@ js_sync_code = f"""
 """
 components.html(js_sync_code, height=0)
 
-# Callbacks for scanning
+# Callbacks for scanning order / box IDs
 def on_scan_submitted():
     key_name = f"scan_field_{st.session_state.scan_input_key}"
     scanned_text = st.session_state.get(key_name, "").strip()
@@ -200,6 +205,19 @@ def confirm_all_scans():
     st.session_state.stamdata_trin = 3
     save_persistent_state()
 
+# Callback for scanning location/shelf barcode
+def on_location_scanned():
+    key_name = f"loc_field_{st.session_state.loc_input_key}"
+    scanned_loc = st.session_state.get(key_name, "").strip()
+    trin = st.session_state.get('pluk_trin', 1)
+    
+    ekstra = f"Lokation: {scanned_loc}" if scanned_loc else "Lokation registreret"
+    gem_stempel(f"Scan lokation (Pluk {trin})", ekstra_info=ekstra)
+    st.session_state.scanned_loc_current = scanned_loc if scanned_loc else "Registreret"
+    st.session_state.transport_trykket = True
+    st.session_state.loc_input_key += 1
+    save_persistent_state()
+
 # 1. Stamdata (vises KUN når ruten endnu IKKE er aktiv)
 if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse:
     
@@ -224,7 +242,7 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
 
     # Trin 2: Automatic Auto-sequence Scanner Input (Alpha -> Beta -> Charlie -> Delta)
     elif st.session_state.stamdata_trin == 2:
-        st.subheader("1. Scan ordrenumre med scanner")
+        st.subheader("1. Scan Boks ID med scanner")
         st.caption(f"Initialer: {st.session_state.get('saved_initialer', '')}")
 
         next_idx = len(st.session_state.scanned_orders)
@@ -234,22 +252,23 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
 
         current_key = f"scan_field_{st.session_state.scan_input_key}"
         st.text_input(
-            f"Scan stregkode for {next_label}:",
+            "Tryk For Ny Boks ID",
             key=current_key,
-            placeholder=f"Scan med TC22 scanner for {next_label}...",
+            placeholder=f"Tryk her for at scanne Boks ID for {next_label}...",
             on_change=on_scan_submitted
         )
 
-        # Vis scannede ordrer
+        # Vis scannede ordrer (NYESTE ØVERST)
         if st.session_state.scanned_orders:
-            st.write("**Scannede ordrer på ruten:**")
-            for idx, item in enumerate(st.session_state.scanned_orders):
+            st.write("**Scannede Boks ID'er på ruten (nyeste øverst):**")
+            reversed_orders = list(enumerate(st.session_state.scanned_orders))[::-1]
+            for real_idx, item in reversed_orders:
                 col_info, col_btn = st.columns([3, 1])
                 with col_info:
                     st.success(f"**{item['zone']}**: `{item['code']}`")
                 with col_btn:
-                    if st.button("Slet", key=f"del_scan_{idx}", use_container_width=True):
-                        remove_scanned_order(idx)
+                    if st.button("Slet", key=f"del_scan_{real_idx}", use_container_width=True):
+                        remove_scanned_order(real_idx)
                         st.rerun()
 
         st.divider()
@@ -268,12 +287,7 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
             ["Kassepluk", "Pallepluk", "Længde pluk", "Buffer pluk", "Lynpluk"]
         )
         st.session_state.valgt_hoved_pluktype = hoved_pluktype
-
-        if hoved_pluktype == "Kassepluk":
-            antal_kassepluk = st.number_input("Antal pluk på ruten", min_value=1, max_value=100, value=1, step=1)
-            st.session_state.endelig_pluktype = f"Kassepluk ({antal_kassepluk} pluk på rute)"
-        else:
-            st.session_state.endelig_pluktype = hoved_pluktype
+        st.session_state.endelig_pluktype = hoved_pluktype
 
         st.divider()
 
@@ -285,6 +299,7 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
             st.session_state.klar_til_indsendelse = False
             st.session_state.pluk_trin = 1
             st.session_state.transport_trykket = False
+            st.session_state.scanned_loc_current = ""
             st.session_state.emballage_trykket = False
             st.session_state.valgt_sorensen = False
             st.session_state.valgt_forsendelse = False
@@ -359,18 +374,31 @@ if st.session_state.rute_aktiv:
         trin = st.session_state.pluk_trin
         st.write(f"**Aktuel plukplads: Nr. {trin} (af maks 100)**")
         
-        col_t1, col_t2 = st.columns(2)
-        with col_t1:
-            trans_type = "primary" if st.session_state.transport_trykket else "secondary"
-            if st.button(f"Ankommet til lokation (Pluk {trin})", type=trans_type, use_container_width=True):
+        if not st.session_state.transport_trykket:
+            loc_key = f"loc_field_{st.session_state.loc_input_key}"
+            st.text_input(
+                f"Scan lokation (Pluk {trin}):",
+                key=loc_key,
+                placeholder=f"Tryk her og scan hyldelokation for pluk {trin}...",
+                on_change=on_location_scanned
+            )
+            
+            # Fallback knap hvis man vil registrere uden stregkode
+            if st.button(f"Registrer ankomst til lokation (Pluk {trin}) uden scan", use_container_width=True):
+                gem_stempel(f"Scan lokation (Pluk {trin})", ekstra_info="Lokation: Registreret manuelt")
+                st.session_state.scanned_loc_current = "Registreret manuelt"
                 st.session_state.transport_trykket = True
-                gem_stempel(f"Ankommet til lokation (Pluk {trin})")
+                save_persistent_state()
                 st.rerun()
-
-        with col_t2:
-            if st.button(f"Afslut pluk {trin}", use_container_width=True):
+        else:
+            loc_disp = st.session_state.get('scanned_loc_current', '')
+            info_str = f"Lokation registrerede: **{loc_disp}**" if loc_disp else "Lokation registrerede"
+            st.success(info_str)
+            
+            if st.button(f"Afslut pluk {trin}", type="primary", use_container_width=True):
                 gem_stempel(f"Afslut pluk {trin}")
                 st.session_state.transport_trykket = False
+                st.session_state.scanned_loc_current = ""
                 if st.session_state.pluk_trin < 100:
                     st.session_state.pluk_trin += 1
                 save_persistent_state()
@@ -498,6 +526,7 @@ if st.session_state.malinger:
                     st.session_state.valgt_forsendelse = False
                     st.session_state.pluk_trin = 1
                     st.session_state.transport_trykket = False
+                    st.session_state.scanned_loc_current = ""
                     st.session_state.emballage_trykket = False
                     st.session_state.bekraeft_send = False
                     st.session_state.stamdata_trin = 1
