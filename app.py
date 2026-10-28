@@ -7,7 +7,7 @@ import uuid
 
 st.set_page_config(page_title="Carl Ras - TDABC Plukmåling", layout="centered")
 
-# CSS to FORCE 3 columns grid on all mobile/tablet screens and hide Streamlit UI elements
+# CSS to FORCE 3 columns grid on mobile for numpad, and ensure ALL button texts wrap and are NEVER truncated with "..."
 hide_st_style = """
     <style>
     #MainMenu {visibility: hidden !important; display: none !important;}
@@ -20,28 +20,46 @@ hide_st_style = """
     [data-testid="stStatusWidget"] {visibility: hidden !important; display: none !important;}
     .stAppHeader {display: none !important;}
     
-    .viewerBadge_container__1tB2o,
-    .viewerBadge_link__1S137,
-    [class*="viewerBadge"],
-    [class*="styles_viewerBadge"],
-    a[href*="streamlit.app"],
-    a[href*="streamlit.io"] {
-        display: none !important;
-        visibility: hidden !important;
-        opacity: 0 !important;
-        pointer-events: none !important;
-    }
-    
     div.block-container {
-        padding-top: 1.5rem !important;
+        padding-top: 1.2rem !important;
         padding-bottom: 2rem !important;
+        padding-left: 0.8rem !important;
+        padding-right: 0.8rem !important;
     }
 
-    /* TVING 3 KOLONNER PÅ MOBIL / TELEFON (OVERRIDE STREAMLIT MOBILE MEDIA QUERIES) */
+    /* ALL BUTTONS: Allow text wrapping, no truncation (...) and auto height */
+    button, div[data-testid="stButton"] button {
+        white-space: normal !important;
+        word-wrap: break-word !important;
+        word-break: normal !important;
+        text-overflow: clip !important;
+        line-height: 1.25 !important;
+        height: auto !important;
+        min-height: 48px !important;
+        padding: 10px 8px !important;
+        font-size: 16px !important;
+        font-weight: 600 !important;
+        border-radius: 8px !important;
+    }
+
+    /* Primary buttons in RED for active zone selection */
+    button[kind="primary"], div[data-testid="stButton"] button[kind="primary"] {
+        background-color: #d32f2f !important;
+        color: white !important;
+        border-color: #b71c1c !important;
+    }
+
+    button p, button div, button span {
+        white-space: normal !important;
+        word-wrap: break-word !important;
+        text-overflow: clip !important;
+        line-height: 1.25 !important;
+        font-size: inherit !important;
+    }
+
+    /* TVING 3 KOLONNER PÅ MOBIL / TELEFON FOR NUMPAD GRID & ZONE BUTTONS */
     @media max-width 768px, all {
-        div[data-testid="stHorizontalBlock"],
-        div[data-testid="stHorizontalBlock"] > div,
-        [data-testid="stHorizontalBlock"] {
+        div[data-testid="stHorizontalBlock"] {
             display: flex !important;
             flex-direction: row !important;
             flex-wrap: nowrap !important;
@@ -50,24 +68,20 @@ hide_st_style = """
             margin-bottom: 6px !important;
         }
         div[data-testid="stColumn"], 
-        div[data-testid="column"],
-        [data-testid="stColumn"],
-        [data-testid="column"] {
+        div[data-testid="column"] {
+            width: 50% !important;
+            min-width: 0 !important;
+            flex: 1 1 50% !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(3)) > div[data-testid="stColumn"],
+        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(3)) > div[data-testid="column"] {
             width: 33.33% !important;
-            min-width: 33.33% !important;
-            max-width: 33.33% !important;
             flex: 1 1 33.33% !important;
         }
-        div[data-testid="stColumn"] button, 
-        div[data-testid="column"] button,
-        [data-testid="stColumn"] button,
-        [data-testid="column"] button {
-            width: 100% !important;
-            min-height: 58px !important;
-            font-size: 22px !important;
-            font-weight: bold !important;
-            border-radius: 8px !important;
-            margin: 0 !important;
+        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(4)) > div[data-testid="stColumn"],
+        div[data-testid="stHorizontalBlock"]:has(> div:nth-child(4)) > div[data-testid="column"] {
+            width: 25% !important;
+            flex: 1 1 25% !important;
         }
     }
     </style>
@@ -106,38 +120,81 @@ if 'palle_type' not in st.session_state:
     st.session_state.palle_type = "Helpalle pluk"
 if 'stafet_aktiv' not in st.session_state:
     st.session_state.stafet_aktiv = False
+if 'stamdata_trin' not in st.session_state:
+    st.session_state.stamdata_trin = 1
+
+# Zoner og ordrenumre tilstand
+if 'aktive_zoner' not in st.session_state:
+    st.session_state.aktive_zoner = {}  # e.g. {'Alpha': '030684132', 'Beta': ''}
+if 'aktiv_fokus_zone' not in st.session_state:
+    st.session_state.aktiv_fokus_zone = "Standard"
 if 'ordrenr_val' not in st.session_state:
     st.session_state.ordrenr_val = ""
 if 'manual_ordrenr_input' not in st.session_state:
     st.session_state.manual_ordrenr_input = ""
 if 'gemt_stregkode' not in st.session_state:
     st.session_state.gemt_stregkode = "-"
-if 'stamdata_trin' not in st.session_state:
-    st.session_state.stamdata_trin = 1
 
 def get_dansk_tid():
     return datetime.now(ZoneInfo("Europe/Copenhagen"))
 
-# Callbacks for Numpad matrix (akkumulerer cifre korrekt)
+# Callbacks for Zone selection
+def toggle_zone(zone_name):
+    if zone_name in st.session_state.aktive_zoner:
+        # Hvis den allerede er valgt, fjernes den
+        del st.session_state.aktive_zoner[zone_name]
+        # Hvis det var den aktive fokus zone, skift fokus
+        if st.session_state.aktiv_fokus_zone == zone_name:
+            if st.session_state.aktive_zoner:
+                st.session_state.aktiv_fokus_zone = list(st.session_state.aktive_zoner.keys())[0]
+                st.session_state.ordrenr_val = st.session_state.aktive_zoner[st.session_state.aktiv_fokus_zone]
+            else:
+                st.session_state.aktiv_fokus_zone = "Standard"
+                st.session_state.ordrenr_val = ""
+    else:
+        # Tilføj zone og sæt som aktiv fokus zone
+        st.session_state.aktive_zoner[zone_name] = ""
+        st.session_state.aktiv_fokus_zone = zone_name
+        st.session_state.ordrenr_val = ""
+
+def select_fokus_zone(zone_name):
+    st.session_state.aktiv_fokus_zone = zone_name
+    st.session_state.ordrenr_val = st.session_state.aktive_zoner.get(zone_name, "")
+    st.session_state.manual_ordrenr_input = st.session_state.ordrenr_val
+
+# Callbacks for Numpad matrix
 def add_digit(digit):
     st.session_state.ordrenr_val += str(digit)
     st.session_state.manual_ordrenr_input = st.session_state.ordrenr_val
+    if st.session_state.aktiv_fokus_zone != "Standard":
+        st.session_state.aktive_zoner[st.session_state.aktiv_fokus_zone] = st.session_state.ordrenr_val
 
 def delete_digit():
     if len(st.session_state.ordrenr_val) > 0:
         st.session_state.ordrenr_val = st.session_state.ordrenr_val[:-1]
     st.session_state.manual_ordrenr_input = st.session_state.ordrenr_val
+    if st.session_state.aktiv_fokus_zone != "Standard":
+        st.session_state.aktive_zoner[st.session_state.aktiv_fokus_zone] = st.session_state.ordrenr_val
 
 def confirm_ordrenr():
-    val = st.session_state.ordrenr_val.strip()
-    if val:
-        st.session_state.gemt_stregkode = val
+    # Opbyg samlet stregkode/ordrenummer tekst til loggen
+    if st.session_state.aktive_zoner:
+        zoner_tekst_list = []
+        for z, val in st.session_state.aktive_zoner.items():
+            v = val.strip() if val.strip() else "Uden kode"
+            zoner_tekst_list.append(f"{z}: {v}")
+        st.session_state.gemt_stregkode = ", ".join(zoner_tekst_list)
+    elif st.session_state.ordrenr_val.strip():
+        st.session_state.gemt_stregkode = st.session_state.ordrenr_val.strip()
     else:
         st.session_state.gemt_stregkode = "-"
+    
     st.session_state.stamdata_trin = 3
 
 def on_manual_change():
     st.session_state.ordrenr_val = st.session_state.manual_ordrenr_input
+    if st.session_state.aktiv_fokus_zone != "Standard":
+        st.session_state.aktive_zoner[st.session_state.aktiv_fokus_zone] = st.session_state.ordrenr_val
 
 # 1. Stamdata (vises KUN når ruten endnu IKKE er aktiv)
 if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse:
@@ -160,31 +217,59 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
             else:
                 st.warning("Indtast venligst dine initialer for at fortsætte.")
 
-    # Trin 2: Ordrenummer (Touch Numpad 3x3)
+    # Trin 2: Ordrenummer & Zoner (Touch Numpad 3x3)
     elif st.session_state.stamdata_trin == 2:
-        st.subheader("1. Indtast ordrenummer")
+        st.subheader("1. Vælg zoner og indtast ordrenummer")
         st.caption(f"Initialer: {st.session_state.get('saved_initialer', '')}")
 
-        # Viste display-boks (Ren HTML visning - udløser ALDRIG mobil-tastatur ved tryk)
-        visnings_tekst = st.session_state.ordrenr_val if st.session_state.ordrenr_val else "Indtast ordrenummer..."
+        # Vælg del-ordrer / zoner (Alpha, Beta, C, Delta)
+        st.write("**Tryk for at aktivere zoner på ruten (lyser rød når aktiv):**")
+        z_col1, z_col2, z_col3, z_col4 = st.columns(4)
+        
+        zoner_liste = ["Alpha", "Beta", "C", "Delta"]
+        cols = [z_col1, z_col2, z_col3, z_col4]
+        
+        for z_name, col in zip(zoner_liste, cols):
+            with col:
+                is_active = z_name in st.session_state.aktive_zoner
+                b_type = "primary" if is_active else "secondary"
+                label = f"{z_name}"
+                st.button(label, type=b_type, use_container_width=True, key=f"zone_btn_{z_name}", on_click=toggle_zone, args=(z_name,))
+
+        # Visning af valgte zoner og deres koder
+        if st.session_state.aktive_zoner:
+            st.write("**Aktive zoner (tryk for at skifte fokus):**")
+            fokus_cols = st.columns(len(st.session_state.aktive_zoner))
+            for idx, (z_name, code) in enumerate(st.session_state.aktive_zoner.items()):
+                with fokus_cols[idx]:
+                    is_fokus = (z_name == st.session_state.aktiv_fokus_zone)
+                    btn_kind = "primary" if is_fokus else "secondary"
+                    disp_code = code if code else "Tast kode..."
+                    st.button(f"{z_name}\n({disp_code})", type=btn_kind, use_container_width=True, key=f"fokus_{z_name}", on_click=select_fokus_zone, args=(z_name,))
+
+        # Display-boks for den aktuelt valgte zone
+        fokus_titel = f"Ordrenummer [{st.session_state.aktiv_fokus_zone}]:" if st.session_state.aktiv_fokus_zone != "Standard" else "Ordrenummer:"
+        visnings_tekst = st.session_state.ordrenr_val if st.session_state.ordrenr_val else "Tast ordrenummer..."
         tekst_farve = "#111111" if st.session_state.ordrenr_val else "#888888"
         
         display_html = f"""
         <div style="
             background-color: #f8f9fa;
-            border: 2px solid #0066cc;
+            border: 2px solid #d32f2f;
             border-radius: 8px;
-            padding: 14px;
-            font-size: 26px;
+            padding: 12px;
+            font-size: 24px;
             font-weight: bold;
             text-align: center;
             letter-spacing: 2px;
             color: {tekst_farve};
+            margin-top: 10px;
             margin-bottom: 12px;
             box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
             user-select: none;
             -webkit-user-select: none;
         ">
+            <span style="font-size: 13px; color: #555; display: block; font-weight: normal; margin-bottom: 2px;">{fokus_titel}</span>
             {visnings_tekst}
         </div>
         """
@@ -234,7 +319,7 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
     # Trin 3: Pluktype og Start Plukrute
     elif st.session_state.stamdata_trin == 3:
         st.subheader("1. Vælg pluktype")
-        st.info(f"**Initialer:** {st.session_state.get('saved_initialer', '')} | **Ordrenr:** {st.session_state.get('gemt_stregkode', '-')}")
+        st.info(f"**Initialer:** {st.session_state.get('saved_initialer', '')} | **Ordre/Zoner:** {st.session_state.get('gemt_stregkode', '-')}")
 
         hoved_pluktype = st.selectbox(
             "Vælg pluktype *",
@@ -271,7 +356,7 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
                 'Initialer': st.session_state.get('saved_initialer', ''),
                 'Pluktype': st.session_state.endelig_pluktype,
                 'Handling': "Start plukrute",
-                'Ekstra_Info': f"Rute-ID: {st.session_state.rute_id} | Stregkode: {st.session_state.get('gemt_stregkode', '-')}"
+                'Ekstra_Info': f"Rute-ID: {st.session_state.rute_id} | Ordre/Zoner: {st.session_state.get('gemt_stregkode', '-')}"
             })
             st.rerun()
 
@@ -285,7 +370,7 @@ def gem_stempel(handling, ekstra_info=""):
     pluk_t = st.session_state.get('endelig_pluktype', 'Standard')
     stregk = st.session_state.get('gemt_stregkode', '-')
     
-    info_tekst = f"Rute-ID: {st.session_state.rute_id} | Stregkode: {stregk}"
+    info_tekst = f"Rute-ID: {st.session_state.rute_id} | Ordre/Zoner: {stregk}"
     if ekstra_info:
         info_tekst += f" | {ekstra_info}"
         
@@ -488,6 +573,8 @@ if st.session_state.malinger:
                     st.session_state.stamdata_trin = 1
                     st.session_state.ordrenr_val = ""
                     st.session_state.manual_ordrenr_input = ""
+                    st.session_state.aktive_zoner = {}
+                    st.session_state.aktiv_fokus_zone = "Standard"
                     st.success("Målingen er nu indsendt og gemt i dit Google Sheet!")
                     st.rerun()
                 else:
