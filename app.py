@@ -514,16 +514,11 @@ if st.session_state.malinger:
                             'entry.1387317177': str(row.get('Initialer', '')),
                             'entry.1597480740': str(row.get('Pluktype', '')),
                             'entry.2111546458': str(row.get('Handling', '')),
-                            'entry.1581018160': str(row.get('Rute_ID', '-')) or '-'
+                            'entry.614140164': str(row.get('Rute_ID', '-')) or '-',
+                            'entry.1390497849': str(row.get('Ordre_Zoner', '-')) or '-',
+                            'entry.1878126688': str(row.get('Lokation', '-')) or '-',
+                            'entry.1346827172': str(row.get('Bemaerkning', '-')) or '-'
                         }
-                        
-                        # Support for separate Google Form entry IDs if provided in st.session_state or environment
-                        if st.session_state.get('entry_ordre_zoner'):
-                            payload[st.session_state.get('entry_ordre_zoner')] = str(row.get('Ordre_Zoner', '-'))
-                        if st.session_state.get('entry_lokation'):
-                            payload[st.session_state.get('entry_lokation')] = str(row.get('Lokation', '-'))
-                        if st.session_state.get('entry_bemaerkning'):
-                            payload[st.session_state.get('entry_bemaerkning')] = str(row.get('Bemaerkning', '-'))
                         try:
                             res = requests.post(FORM_RESPONSE_URL, data=payload, headers=headers, timeout=10)
                             if res.status_code in (200, 302):
