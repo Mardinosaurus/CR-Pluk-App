@@ -212,7 +212,7 @@ def on_location_scanned():
     trin = st.session_state.get('pluk_trin', 1)
     
     ekstra = f"Lokation: {scanned_loc}" if scanned_loc else "Lokation registreret"
-    gem_stempel(f"Scan lokation (Pluk {trin})", ekstra_info=ekstra)
+    gem_stempel(f"Scan lokation (Pluk {trin})", lokation=scanned_loc if scanned_loc else "Registreret")
     st.session_state.scanned_loc_current = scanned_loc if scanned_loc else "Registreret"
     st.session_state.transport_trykket = True
     st.session_state.loc_input_key += 1
@@ -323,13 +323,19 @@ elif st.session_state.klar_til_indsendelse:
     st.info("Ruten er afsluttet! Rul ned til '3. Indsend data' for at gemme målingen.")
 
 # Funktion til at gemme tidsstempler
-def gem_stempel(handling, ekstra_info=""):
+def gem_stempel(handling, lokation="", bemaerkning="", ekstra_info=""):
     nu = get_dansk_tid()
     init = st.session_state.get('saved_initialer', 'Ukendt')
     pluk_t = st.session_state.get('endelig_pluktype', 'Standard')
-    stregk = st.session_state.get('gemt_stregkode', '-')
+    r_id = st.session_state.get('rute_id', '-')
+    ordre_z = st.session_state.get('gemt_stregkode', '-')
     
-    info_tekst = f"Rute-ID: {st.session_state.rute_id} | Ordre/Zoner: {stregk}"
+    # Combined string for backward compatibility / single column fallback
+    info_tekst = f"Rute-ID: {r_id} | Ordre/Zoner: {ordre_z}"
+    if lokation:
+        info_tekst += f" | Lokation: {lokation}"
+    if bemaerkning:
+        info_tekst += f" | Bemærkning: {bemaerkning}"
     if ekstra_info:
         info_tekst += f" | {ekstra_info}"
         
@@ -339,6 +345,10 @@ def gem_stempel(handling, ekstra_info=""):
         'Initialer': init,
         'Pluktype': pluk_t,
         'Handling': handling,
+        'Rute_ID': r_id,
+        'Ordre_Zoner': ordre_z,
+        'Lokation': lokation if lokation else '-',
+        'Bemaerkning': bemaerkning if bemaerkning else '-',
         'Ekstra_Info': info_tekst
     })
     save_persistent_state()
@@ -385,7 +395,7 @@ if st.session_state.rute_aktiv:
             
             # Fallback knap hvis man vil registrere uden stregkode
             if st.button(f"Registrer ankomst til lokation (Pluk {trin}) uden scan", use_container_width=True):
-                gem_stempel(f"Scan lokation (Pluk {trin})", ekstra_info="Lokation: Registreret manuelt")
+                gem_stempel(f"Scan lokation (Pluk {trin})", lokation="Registreret manuelt")
                 st.session_state.scanned_loc_current = "Registreret manuelt"
                 st.session_state.transport_trykket = True
                 save_persistent_state()
@@ -412,7 +422,7 @@ if st.session_state.rute_aktiv:
         bemaerkning_input = st.text_input("Beskrivelse af fejl eller afvigelse:", key="bemaerkning_input_field", placeholder="f.eks. manglende vare, beskadiget emballage")
         if st.button("Gem bemærkning"):
             if bemaerkning_input.strip():
-                gem_stempel("Fejl / Bemærkning", ekstra_info=bemaerkning_input.strip())
+                gem_stempel("Fejl / Bemærkning", bemaerkning=bemaerkning_input.strip())
                 st.success(f"Gemt bemærkning: '{bemaerkning_input.strip()}'")
                 st.rerun()
 
@@ -497,14 +507,23 @@ if st.session_state.malinger:
                         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                     }
                     for row in st.session_state.malinger:
+                        # Build payload with individual columns or fallback to Ekstra_Info
                         payload = {
                             'entry.1109742049': str(row.get('Dato', '')),
                             'entry.785756491': str(row.get('Tidspunkt', '')),
                             'entry.1387317177': str(row.get('Initialer', '')),
                             'entry.1597480740': str(row.get('Pluktype', '')),
                             'entry.2111546458': str(row.get('Handling', '')),
-                            'entry.1581018160': str(row.get('Ekstra_Info', '-')) or '-'
+                            'entry.1581018160': str(row.get('Rute_ID', '-')) or '-'
                         }
+                        
+                        # Support for separate Google Form entry IDs if provided in st.session_state or environment
+                        if st.session_state.get('entry_ordre_zoner'):
+                            payload[st.session_state.get('entry_ordre_zoner')] = str(row.get('Ordre_Zoner', '-'))
+                        if st.session_state.get('entry_lokation'):
+                            payload[st.session_state.get('entry_lokation')] = str(row.get('Lokation', '-'))
+                        if st.session_state.get('entry_bemaerkning'):
+                            payload[st.session_state.get('entry_bemaerkning')] = str(row.get('Bemaerkning', '-'))
                         try:
                             res = requests.post(FORM_RESPONSE_URL, data=payload, headers=headers, timeout=10)
                             if res.status_code in (200, 302):
