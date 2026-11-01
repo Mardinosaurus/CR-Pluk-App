@@ -423,173 +423,169 @@ if st.session_state.rute_aktiv:
     hoved_p = st.session_state.get('valgt_hoved_pluktype', '')
     kraever_emballage = hoved_p in ["Kassepluk", "Pallepluk"]
 
-    if kraever_emballage:
-        if not st.session_state.emballage_trykket:
-            st.warning("⚠️ **Klargøring af lastbærer påkrævet:** Tryk på **'Afslut emballage pålægning'** for at starte plukruten.")
-            if st.button("Afslut emballage pålægning", type="primary", use_container_width=True):
-                st.session_state.emballage_trykket = True
-                gem_stempel("Afslut emballage pålægning")
-                st.rerun()
-        else:
-            st.success("✅ Emballage / klargøring afsluttet")
-    elif hoved_p == "Buffer pluk":
-        st.write("**Brug af Berta:**")
-        berta_opt = st.radio("Brug af Berta *", ["Nej", "Ja"], horizontal=True, key="berta_radio")
-        st.session_state.berta_valgt = berta_opt
-        
-        if berta_opt == "Ja":
-            berta_type = "primary" if st.session_state.berta_transport_trykket else "secondary"
-            if st.button("Ankommet til Berta", type=berta_type, use_container_width=True):
-                st.session_state.berta_transport_trykket = True
-                gem_stempel("Ankommet til Berta")
-                st.rerun()
-    # For Længde pluk og Lynpluk er emballage ikke påkrævet og vises slet ikke
+    # Hvis Kassepluk eller Pallepluk: VIS KUN denne knap, intet andet på skærmen!
+    if kraever_emballage and not st.session_state.emballage_trykket:
+        st.info(f"**Pluktype:** {hoved_p} | Klargør emballage / lastbærer før ruten starter.")
+        if st.button("Afslut emballage pålægning", type="primary", use_container_width=True):
+            st.session_state.emballage_trykket = True
+            gem_stempel("Afslut emballage pålægning")
+            save_persistent_state()
+            st.rerun()
+    else:
+        # Når knappen er trykket (eller for Buffer/Længde/Lynpluk), forsvinder emballageknappen,
+        # og alle øvrige funktioner (Berta, Plukloop og Afslutning) bliver synlige!
+        if hoved_p == "Buffer pluk":
+            st.write("**Brug af Berta:**")
+            berta_opt = st.radio("Brug af Berta *", ["Nej", "Ja"], horizontal=True, key="berta_radio")
+            st.session_state.berta_valgt = berta_opt
+            
+            if berta_opt == "Ja":
+                berta_type = "primary" if st.session_state.berta_transport_trykket else "secondary"
+                if st.button("Ankommet til Berta", type=berta_type, use_container_width=True):
+                    st.session_state.berta_transport_trykket = True
+                    gem_stempel("Ankommet til Berta")
+                    st.rerun()
+            st.divider()
 
-    st.divider()
+        if not st.session_state.valgt_sorensen and not st.session_state.valgt_forsendelse:
+            trin = st.session_state.pluk_trin
+            st.write(f"**Aktuel plukplads: Nr. {trin} (af maks 100)**")
+            
+            if not st.session_state.transport_trykket:
+                loc_key = f"loc_field_{st.session_state.loc_input_key}"
+                st.text_input(
+                    f"Scan lokation (Pluk {trin}):",
+                    key=loc_key,
+                    placeholder=f"Tryk her og scan hyldelokation for pluk {trin}...",
+                    on_change=on_location_scanned
+                )
 
-    # Hvis pluktypen kræver emballage, låses plukloopet indtil knappen er trykket
-    pluk_tilladt = not (kraever_emballage and not st.session_state.emballage_trykket)
-
-    if pluk_tilladt and not st.session_state.valgt_sorensen and not st.session_state.valgt_forsendelse:
-        trin = st.session_state.pluk_trin
-        st.write(f"**Aktuel plukplads: Nr. {trin} (af maks 100)**")
-        
-        if not st.session_state.transport_trykket:
-            loc_key = f"loc_field_{st.session_state.loc_input_key}"
-            st.text_input(
-                f"Scan lokation (Pluk {trin}):",
-                key=loc_key,
-                placeholder=f"Tryk her og scan hyldelokation for pluk {trin}...",
-                on_change=on_location_scanned
-            )
-
-            # Auto-fokus og skjul virtuelt tastatur ved scanning af hyldelokation
-            autofocus_loc_js = f"""
-            <script>
-                // Loc iteration: {st.session_state.loc_input_key}_{trin}
-                function ensureLocFocus() {{
-                    try {{
-                        const doc = window.parent.document;
-                        const inputs = doc.querySelectorAll('input[type="text"], input[type="tel"]');
-                        for (let inp of inputs) {{
-                            const ph = inp.getAttribute('placeholder') || '';
-                            const aria = inp.getAttribute('aria-label') || '';
-                            if (ph.includes('hyldelokation') || aria.includes('hyldelokation') || aria.includes('Scan lokation')) {{
-                                inp.setAttribute('inputmode', 'none');
-                                inp.setAttribute('virtualkeyboardpolicy', 'manual');
-                                if (navigator.virtualKeyboard) {{
-                                    navigator.virtualKeyboard.hide();
+                # Auto-fokus og skjul virtuelt tastatur ved scanning af hyldelokation
+                autofocus_loc_js = f"""
+                <script>
+                    // Loc iteration: {st.session_state.loc_input_key}_{trin}
+                    function ensureLocFocus() {{
+                        try {{
+                            const doc = window.parent.document;
+                            const inputs = doc.querySelectorAll('input[type="text"], input[type="tel"]');
+                            for (let inp of inputs) {{
+                                const ph = inp.getAttribute('placeholder') || '';
+                                const aria = inp.getAttribute('aria-label') || '';
+                                if (ph.includes('hyldelokation') || aria.includes('hyldelokation') || aria.includes('Scan lokation')) {{
+                                    inp.setAttribute('inputmode', 'none');
+                                    inp.setAttribute('virtualkeyboardpolicy', 'manual');
+                                    if (navigator.virtualKeyboard) {{
+                                        navigator.virtualKeyboard.hide();
+                                    }}
+                                    inp.readOnly = true;
+                                    inp.focus();
+                                    inp.select();
+                                    setTimeout(() => {{
+                                        inp.readOnly = false;
+                                    }}, 40);
+                                    return true;
                                 }}
-                                inp.readOnly = true;
-                                inp.focus();
-                                inp.select();
-                                setTimeout(() => {{
-                                    inp.readOnly = false;
-                                }}, 40);
-                                return true;
                             }}
-                        }}
-                    }} catch (e) {{}}
-                    return false;
-                }}
-                ensureLocFocus();
-                setTimeout(ensureLocFocus, 30);
-                setTimeout(ensureLocFocus, 100);
-                setTimeout(ensureLocFocus, 250);
-            </script>
-            """
-            components.html(autofocus_loc_js, height=0)
-            
-            # Fallback knap hvis man vil registrere uden stregkode
-            if st.button(f"Registrer ankomst til lokation (Pluk {trin}) uden scan", use_container_width=True):
-                gem_stempel(f"Scan lokation (Pluk {trin})", lokation="Registreret manuelt")
-                st.session_state.scanned_loc_current = "Registreret manuelt"
-                st.session_state.transport_trykket = True
-                save_persistent_state()
-                st.rerun()
-        else:
-            loc_disp = st.session_state.get('scanned_loc_current', '')
-            info_str = f"Lokation registrerede: **{loc_disp}**" if loc_disp else "Lokation registrerede"
-            st.success(info_str)
-            
-            if st.button(f"Afslut pluk {trin}", type="primary", use_container_width=True):
-                cur_loc = st.session_state.get('scanned_loc_current', '')
-                gem_stempel(f"Afslut pluk {trin}", lokation=cur_loc)
-                st.session_state.transport_trykket = False
-                st.session_state.scanned_loc_current = ""
-                if st.session_state.pluk_trin < 100:
-                    st.session_state.pluk_trin += 1
-                save_persistent_state()
-                st.rerun()
+                        }} catch (e) {{}}
+                        return false;
+                    }}
+                    ensureLocFocus();
+                    setTimeout(ensureLocFocus, 30);
+                    setTimeout(ensureLocFocus, 100);
+                    setTimeout(ensureLocFocus, 250);
+                </script>
+                """
+                components.html(autofocus_loc_js, height=0)
+                
+                # Fallback knap hvis man vil registrere uden stregkode
+                if st.button(f"Registrer ankomst til lokation (Pluk {trin}) uden scan", use_container_width=True):
+                    gem_stempel(f"Scan lokation (Pluk {trin})", lokation="Registreret manuelt")
+                    st.session_state.scanned_loc_current = "Registreret manuelt"
+                    st.session_state.transport_trykket = True
+                    save_persistent_state()
+                    st.rerun()
+            else:
+                loc_disp = st.session_state.get('scanned_loc_current', '')
+                info_str = f"Lokation registrerede: **{loc_disp}**" if loc_disp else "Lokation registrerede"
+                st.success(info_str)
+                
+                if st.button(f"Afslut pluk {trin}", type="primary", use_container_width=True):
+                    cur_loc = st.session_state.get('scanned_loc_current', '')
+                    gem_stempel(f"Afslut pluk {trin}", lokation=cur_loc)
+                    st.session_state.transport_trykket = False
+                    st.session_state.scanned_loc_current = ""
+                    if st.session_state.pluk_trin < 100:
+                        st.session_state.pluk_trin += 1
+                    save_persistent_state()
+                    st.rerun()
 
-        st.divider()
+            st.divider()
 
-    if pluk_tilladt:
         st.subheader("Afslutning af rute")
 
-    with st.expander("Tilføj bemærkning / fejl på rute"):
-        bemaerkning_input = st.text_input("Beskrivelse af fejl eller afvigelse:", key="bemaerkning_input_field", placeholder="f.eks. manglende vare, beskadiget emballage")
-        if st.button("Gem bemærkning"):
-            if bemaerkning_input.strip():
-                gem_stempel("Fejl / Bemærkning", bemaerkning=bemaerkning_input.strip())
-                st.success(f"Gemt bemærkning: '{bemaerkning_input.strip()}'")
+        with st.expander("Tilføj bemærkning / fejl på rute"):
+            bemaerkning_input = st.text_input("Beskrivelse af fejl eller afvigelse:", key="bemaerkning_input_field", placeholder="f.eks. manglende vare, beskadiget emballage")
+            if st.button("Gem bemærkning"):
+                if bemaerkning_input.strip():
+                    gem_stempel("Fejl / Bemærkning", bemaerkning=bemaerkning_input.strip())
+                    st.success(f"Gemt bemærkning: '{bemaerkning_input.strip()}'")
+                    st.rerun()
+
+        col_f1, col_f2 = st.columns(2)
+
+        with col_f1:
+            sor_type = "primary" if st.session_state.valgt_sorensen else "secondary"
+            if st.button("Afsat til Sørensen", type=sor_type, use_container_width=True):
+                st.session_state.valgt_sorensen = True
+                st.session_state.valgt_forsendelse = False
+                gem_stempel("Afsat til Sørensen")
                 st.rerun()
 
-    col_f1, col_f2 = st.columns(2)
+        with col_f2:
+            for_type = "primary" if st.session_state.valgt_forsendelse else "secondary"
+            if st.button("Forsendelsesproces begyndt", type=for_type, use_container_width=True):
+                st.session_state.valgt_sorensen = False
+                st.session_state.valgt_forsendelse = True
+                gem_stempel("Forsendelsesproces begyndt")
+                st.rerun()
 
-    with col_f1:
-        sor_type = "primary" if st.session_state.valgt_sorensen else "secondary"
-        if st.button("Afsat til Sørensen", type=sor_type, use_container_width=True):
-            st.session_state.valgt_sorensen = True
-            st.session_state.valgt_forsendelse = False
-            gem_stempel("Afsat til Sørensen")
-            st.rerun()
+        if st.session_state.valgt_sorensen or st.session_state.valgt_forsendelse:
+            overskrift = "Sørensen (Forsendelse)" if st.session_state.valgt_sorensen else "Forsendelsesproces"
+            st.divider()
+            st.write(f"**Viderelevering Krav: {overskrift}**")
 
-    with col_f2:
-        for_type = "primary" if st.session_state.valgt_forsendelse else "secondary"
-        if st.button("Forsendelsesproces begyndt", type=for_type, use_container_width=True):
-            st.session_state.valgt_sorensen = False
-            st.session_state.valgt_forsendelse = True
-            gem_stempel("Forsendelsesproces begyndt")
-            st.rerun()
+            har_fg = st.checkbox("Farlig gods")
+            ant_fg = st.number_input("Antal farlig gods", min_value=0, value=1 if har_fg else 0) if har_fg else 0
 
-    if st.session_state.valgt_sorensen or st.session_state.valgt_forsendelse:
-        overskrift = "Sørensen (Forsendelse)" if st.session_state.valgt_sorensen else "Forsendelsesproces"
+            har_ft = st.checkbox("Festool registrering")
+            ant_ft = st.number_input("Antal Festool registreringer", min_value=0, value=1 if har_ft else 0) if har_ft else 0
+
+            har_srv = st.checkbox("Service")
+            ant_srv = st.number_input("Antal service", min_value=0, value=1 if har_srv else 0) if har_srv else 0
+
+            if st.button("Gem tillægstjenester", type="primary", use_container_width=True):
+                tillaeg = []
+                if har_fg and ant_fg > 0:
+                    tillaeg.append(f"Farlig gods: {ant_fg}")
+                if har_ft and ant_ft > 0:
+                    tillaeg.append(f"Festool: {ant_ft}")
+                if har_srv and ant_srv > 0:
+                    tillaeg.append(f"Service: {ant_srv}")
+
+                info_str = ", ".join(tillaeg) if tillaeg else "Ingen tillæg"
+                gem_stempel(f"Tillægstjenester ({overskrift})", ekstra_info=info_str)
+                st.success("Tillægstjenester registreret!")
+                st.rerun()
+
         st.divider()
-        st.write(f"**Viderelevering Krav: {overskrift}**")
-
-        har_fg = st.checkbox("Farlig gods")
-        ant_fg = st.number_input("Antal farlig gods", min_value=0, value=1 if har_fg else 0) if har_fg else 0
-
-        har_ft = st.checkbox("Festool registrering")
-        ant_ft = st.number_input("Antal Festool registreringer", min_value=0, value=1 if har_ft else 0) if har_ft else 0
-
-        har_srv = st.checkbox("Service")
-        ant_srv = st.number_input("Antal service", min_value=0, value=1 if har_srv else 0) if har_srv else 0
-
-        if st.button("Gem tillægstjenester", type="primary", use_container_width=True):
-            tillaeg = []
-            if har_fg and ant_fg > 0:
-                tillaeg.append(f"Farlig gods: {ant_fg}")
-            if har_ft and ant_ft > 0:
-                tillaeg.append(f"Festool: {ant_ft}")
-            if har_srv and ant_srv > 0:
-                tillaeg.append(f"Service: {ant_srv}")
-
-            info_str = ", ".join(tillaeg) if tillaeg else "Ingen tillæg"
-            gem_stempel(f"Tillægstjenester ({overskrift})", ekstra_info=info_str)
-            st.success("Tillægstjenester registreret!")
+        if st.button("Afslut plukordre", type="primary", use_container_width=True):
+            gem_stempel("Afslut plukordre")
+            st.session_state.rute_aktiv = False
+            st.session_state.klar_til_indsendelse = True
+            st.session_state.valgt_sorensen = False
+            st.session_state.valgt_forsendelse = False
+            save_persistent_state()
             st.rerun()
-
-    st.divider()
-    if st.button("Afslut plukordre", type="primary", use_container_width=True):
-        gem_stempel("Afslut plukordre")
-        st.session_state.rute_aktiv = False
-        st.session_state.klar_til_indsendelse = True
-        st.session_state.valgt_sorensen = False
-        st.session_state.valgt_forsendelse = False
-        save_persistent_state()
-        st.rerun()
 
 st.divider()
 
