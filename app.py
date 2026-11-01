@@ -590,7 +590,10 @@ if st.session_state.rute_aktiv:
 st.divider()
 
 # 3. Indsend data
-if st.session_state.malinger:
+hoved_p_indsend = st.session_state.get('valgt_hoved_pluktype', '')
+emballage_mangler = (hoved_p_indsend in ["Kassepluk", "Pallepluk"]) and not st.session_state.get('emballage_trykket', False)
+
+if st.session_state.malinger and not emballage_mangler:
     st.subheader("3. Indsend data")
     if not st.session_state.bekraeft_send:
         if st.button("Send data", type="primary", use_container_width=True):
