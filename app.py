@@ -261,30 +261,44 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
         # Automatisk fokus på scanner-feltet (både Alpha, Beta, Charlie osv.)
         autofocus_js = f"""
         <script>
-            function setScanFocus() {{
+            function ensureScanFocus() {{
                 try {{
                     const doc = window.parent.document;
-                    // Find inputfeltet for scanning af Boks ID
                     const inputs = doc.querySelectorAll('input[type="text"]');
                     for (let inp of inputs) {{
                         const ph = inp.getAttribute('placeholder') || '';
                         const aria = inp.getAttribute('aria-label') || '';
                         if (ph.includes('Boks ID') || aria.includes('Boks ID')) {{
-                            inp.focus();
-                            inp.select();
-                            break;
+                            if (doc.activeElement !== inp) {{
+                                inp.focus();
+                                inp.select();
+                            }}
+                            return true;
                         }}
                     }}
-                }} catch (e) {{
-                    // Fallback
-                }}
+                }} catch (e) {{}}
+                return false;
             }}
-            setTimeout(setScanFocus, 30);
-            setTimeout(setScanFocus, 100);
-            setTimeout(setScanFocus, 250);
+
+            // Hurtig kørsel umiddelbart efter render
+            ensureScanFocus();
+            setTimeout(ensureScanFocus, 30);
+            setTimeout(ensureScanFocus, 80);
+            setTimeout(ensureScanFocus, 150);
+            setTimeout(ensureScanFocus, 300);
+
+            // Kontinuerlig overvågning (hver 100ms i op til 2 sekunder) så fokus ALDRIG tabes ved re-render
+            let attempts = 0;
+            const focusInterval = setInterval(() => {{
+                attempts++;
+                ensureScanFocus();
+                if (attempts >= 20) {{
+                    clearInterval(focusInterval);
+                }}
+            }}, 100);
         </script>
         """
-        components.html(autofocus_js, height=0)
+        components.html(autofocus_js, height=0, key=f"autofocus_scan_{st.session_state.scan_input_key}")
 
         # Vis scannede ordrer (NYESTE ØVERST)
         if st.session_state.scanned_orders:
