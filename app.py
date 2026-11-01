@@ -421,8 +421,18 @@ if st.session_state.rute_aktiv:
     st.subheader("2. Registrer faser på ruten")
     
     hoved_p = st.session_state.get('valgt_hoved_pluktype', '')
+    kraever_emballage = hoved_p in ["Kassepluk", "Pallepluk"]
 
-    if hoved_p == "Buffer pluk":
+    if kraever_emballage:
+        if not st.session_state.emballage_trykket:
+            st.warning("⚠️ **Klargøring af lastbærer påkrævet:** Tryk på **'Afslut emballage pålægning'** for at starte plukruten.")
+            if st.button("Afslut emballage pålægning", type="primary", use_container_width=True):
+                st.session_state.emballage_trykket = True
+                gem_stempel("Afslut emballage pålægning")
+                st.rerun()
+        else:
+            st.success("✅ Emballage / klargøring afsluttet")
+    elif hoved_p == "Buffer pluk":
         st.write("**Brug af Berta:**")
         berta_opt = st.radio("Brug af Berta *", ["Nej", "Ja"], horizontal=True, key="berta_radio")
         st.session_state.berta_valgt = berta_opt
@@ -433,17 +443,14 @@ if st.session_state.rute_aktiv:
                 st.session_state.berta_transport_trykket = True
                 gem_stempel("Ankommet til Berta")
                 st.rerun()
-    else:
-        if not st.session_state.emballage_trykket:
-            emb_type = "secondary"
-            if st.button("Afslut emballage pålægning", type=emb_type, use_container_width=True):
-                st.session_state.emballage_trykket = True
-                gem_stempel("Afslut emballage pålægning")
-                st.rerun()
+    # For Længde pluk og Lynpluk er emballage ikke påkrævet og vises slet ikke
 
     st.divider()
 
-    if not st.session_state.valgt_sorensen and not st.session_state.valgt_forsendelse:
+    # Hvis pluktypen kræver emballage, låses plukloopet indtil knappen er trykket
+    pluk_tilladt = not (kraever_emballage and not st.session_state.emballage_trykket)
+
+    if pluk_tilladt and not st.session_state.valgt_sorensen and not st.session_state.valgt_forsendelse:
         trin = st.session_state.pluk_trin
         st.write(f"**Aktuel plukplads: Nr. {trin} (af maks 100)**")
         
@@ -517,7 +524,8 @@ if st.session_state.rute_aktiv:
 
         st.divider()
 
-    st.subheader("Afslutning af rute")
+    if pluk_tilladt:
+        st.subheader("Afslutning af rute")
 
     with st.expander("Tilføj bemærkning / fejl på rute"):
         bemaerkning_input = st.text_input("Beskrivelse af fejl eller afvigelse:", key="bemaerkning_input_field", placeholder="f.eks. manglende vare, beskadiget emballage")
