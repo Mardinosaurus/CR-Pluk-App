@@ -262,19 +262,33 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
         autofocus_js = f"""
         <script>
             // Scan iteration: {st.session_state.scan_input_key}
+            function suppressKeyboardAndFocus(inp) {{
+                try {{
+                    inp.setAttribute('inputmode', 'none');
+                    inp.setAttribute('virtualkeyboardpolicy', 'manual');
+                    if (navigator.virtualKeyboard) {{
+                        navigator.virtualKeyboard.overlaysContent = true;
+                        navigator.virtualKeyboard.hide();
+                    }}
+                    // Readonly-trick: forhindrer Android i at åbne soft-keyboard ved fokus
+                    inp.readOnly = true;
+                    inp.focus();
+                    inp.select();
+                    setTimeout(() => {{
+                        inp.readOnly = false;
+                    }}, 40);
+                }} catch (e) {{}}
+            }}
+
             function ensureScanFocus() {{
                 try {{
                     const doc = window.parent.document;
-                    const inputs = doc.querySelectorAll('input[type="text"]');
+                    const inputs = doc.querySelectorAll('input[type="text"], input[type="tel"]');
                     for (let inp of inputs) {{
                         const ph = inp.getAttribute('placeholder') || '';
                         const aria = inp.getAttribute('aria-label') || '';
                         if (ph.includes('Boks ID') || aria.includes('Boks ID')) {{
-                            inp.setAttribute('inputmode', 'none');
-                            if (doc.activeElement !== inp) {{
-                                inp.focus();
-                                inp.select();
-                            }}
+                            suppressKeyboardAndFocus(inp);
                             return true;
                         }}
                     }}
@@ -282,19 +296,17 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
                 return false;
             }}
 
-            // Hurtig kørsel umiddelbart efter render
             ensureScanFocus();
             setTimeout(ensureScanFocus, 30);
             setTimeout(ensureScanFocus, 80);
             setTimeout(ensureScanFocus, 150);
             setTimeout(ensureScanFocus, 300);
 
-            // Kontinuerlig overvågning (hver 100ms i op til 2 sekunder) så fokus ALDRIG tabes ved re-render
             let attempts = 0;
             const focusInterval = setInterval(() => {{
                 attempts++;
                 ensureScanFocus();
-                if (attempts >= 20) {{
+                if (attempts >= 15) {{
                     clearInterval(focusInterval);
                 }}
             }}, 100);
@@ -451,16 +463,22 @@ if st.session_state.rute_aktiv:
                 function ensureLocFocus() {{
                     try {{
                         const doc = window.parent.document;
-                        const inputs = doc.querySelectorAll('input[type="text"]');
+                        const inputs = doc.querySelectorAll('input[type="text"], input[type="tel"]');
                         for (let inp of inputs) {{
                             const ph = inp.getAttribute('placeholder') || '';
                             const aria = inp.getAttribute('aria-label') || '';
                             if (ph.includes('hyldelokation') || aria.includes('hyldelokation') || aria.includes('Scan lokation')) {{
                                 inp.setAttribute('inputmode', 'none');
-                                if (doc.activeElement !== inp) {{
-                                    inp.focus();
-                                    inp.select();
+                                inp.setAttribute('virtualkeyboardpolicy', 'manual');
+                                if (navigator.virtualKeyboard) {{
+                                    navigator.virtualKeyboard.hide();
                                 }}
+                                inp.readOnly = true;
+                                inp.focus();
+                                inp.select();
+                                setTimeout(() => {{
+                                    inp.readOnly = false;
+                                }}, 40);
                                 return true;
                             }}
                         }}
