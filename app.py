@@ -258,6 +258,34 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
             on_change=on_scan_submitted
         )
 
+        # Automatisk fokus på scanner-feltet (både Alpha, Beta, Charlie osv.)
+        autofocus_js = f"""
+        <script>
+            function setScanFocus() {{
+                try {{
+                    const doc = window.parent.document;
+                    // Find inputfeltet for scanning af Boks ID
+                    const inputs = doc.querySelectorAll('input[type="text"]');
+                    for (let inp of inputs) {{
+                        const ph = inp.getAttribute('placeholder') || '';
+                        const aria = inp.getAttribute('aria-label') || '';
+                        if (ph.includes('Boks ID') || aria.includes('Boks ID')) {{
+                            inp.focus();
+                            inp.select();
+                            break;
+                        }}
+                    }}
+                }} catch (e) {{
+                    // Fallback
+                }}
+            }}
+            setTimeout(setScanFocus, 30);
+            setTimeout(setScanFocus, 100);
+            setTimeout(setScanFocus, 250);
+        </script>
+        """
+        components.html(autofocus_js, height=0)
+
         # Vis scannede ordrer (NYESTE ØVERST)
         if st.session_state.scanned_orders:
             st.write("**Scannede Boks ID'er på ruten (nyeste øverst):**")
@@ -308,13 +336,20 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
             st.session_state.berta_transport_trykket = False
 
             nu = get_dansk_tid()
+            gemt_ordre_zoner = st.session_state.get('gemt_stregkode', '')
+            if gemt_ordre_zoner == '-':
+                gemt_ordre_zoner = ''
             st.session_state.malinger.append({
                 'Dato': nu.strftime('%Y-%m-%d'),
                 'Tidspunkt': nu.strftime('%H:%M:%S'),
                 'Initialer': st.session_state.get('saved_initialer', ''),
                 'Pluktype': st.session_state.endelig_pluktype,
                 'Handling': "Start plukrute",
-                'Ekstra_Info': f"Rute-ID: {st.session_state.rute_id} | Ordre/Zoner: {st.session_state.get('gemt_stregkode', '-')}"
+                'Rute_ID': st.session_state.rute_id,
+                'Ordre_Zoner': gemt_ordre_zoner,
+                'Lokation': '',
+                'Bemaerkning': '',
+                'Ekstra_Info': f"Rute-ID: {st.session_state.rute_id} | Ordre/Zoner: {gemt_ordre_zoner}"
             })
             save_persistent_state()
             st.rerun()
