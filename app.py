@@ -488,7 +488,8 @@ if st.session_state.rute_aktiv:
             st.success(info_str)
             
             if st.button(f"Afslut pluk {trin}", type="primary", use_container_width=True):
-                gem_stempel(f"Afslut pluk {trin}")
+                cur_loc = st.session_state.get('scanned_loc_current', '')
+                gem_stempel(f"Afslut pluk {trin}", lokation=cur_loc)
                 st.session_state.transport_trykket = False
                 st.session_state.scanned_loc_current = ""
                 if st.session_state.pluk_trin < 100:
