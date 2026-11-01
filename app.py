@@ -270,6 +270,7 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
                         const ph = inp.getAttribute('placeholder') || '';
                         const aria = inp.getAttribute('aria-label') || '';
                         if (ph.includes('Boks ID') || aria.includes('Boks ID')) {{
+                            inp.setAttribute('inputmode', 'none');
                             if (doc.activeElement !== inp) {{
                                 inp.focus();
                                 inp.select();
@@ -442,6 +443,37 @@ if st.session_state.rute_aktiv:
                 placeholder=f"Tryk her og scan hyldelokation for pluk {trin}...",
                 on_change=on_location_scanned
             )
+
+            # Auto-fokus og skjul virtuelt tastatur ved scanning af hyldelokation
+            autofocus_loc_js = f"""
+            <script>
+                // Loc iteration: {st.session_state.loc_input_key}_{trin}
+                function ensureLocFocus() {{
+                    try {{
+                        const doc = window.parent.document;
+                        const inputs = doc.querySelectorAll('input[type="text"]');
+                        for (let inp of inputs) {{
+                            const ph = inp.getAttribute('placeholder') || '';
+                            const aria = inp.getAttribute('aria-label') || '';
+                            if (ph.includes('hyldelokation') || aria.includes('hyldelokation') || aria.includes('Scan lokation')) {{
+                                inp.setAttribute('inputmode', 'none');
+                                if (doc.activeElement !== inp) {{
+                                    inp.focus();
+                                    inp.select();
+                                }}
+                                return true;
+                            }}
+                        }}
+                    }} catch (e) {{}}
+                    return false;
+                }}
+                ensureLocFocus();
+                setTimeout(ensureLocFocus, 30);
+                setTimeout(ensureLocFocus, 100);
+                setTimeout(ensureLocFocus, 250);
+            </script>
+            """
+            components.html(autofocus_loc_js, height=0)
             
             # Fallback knap hvis man vil registrere uden stregkode
             if st.button(f"Registrer ankomst til lokation (Pluk {trin}) uden scan", use_container_width=True):
