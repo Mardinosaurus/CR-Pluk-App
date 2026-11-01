@@ -261,6 +261,7 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
         # Automatisk fokus på scanner-feltet (både Alpha, Beta, Charlie osv.)
         autofocus_js = f"""
         <script>
+            // Scan iteration: {st.session_state.scan_input_key}
             function ensureScanFocus() {{
                 try {{
                     const doc = window.parent.document;
@@ -298,7 +299,7 @@ if not st.session_state.rute_aktiv and not st.session_state.klar_til_indsendelse
             }}, 100);
         </script>
         """
-        components.html(autofocus_js, height=0, key=f"autofocus_scan_{st.session_state.scan_input_key}")
+        components.html(autofocus_js, height=0)
 
         # Vis scannede ordrer (NYESTE ØVERST)
         if st.session_state.scanned_orders:
